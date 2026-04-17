@@ -1,0 +1,13 @@
+# Private — cleartext usernames, raw participant data
+private/
+
+# OS
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+
+# Editor
+.vscode/
+.idea/
