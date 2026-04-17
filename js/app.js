@@ -36,7 +36,6 @@ form.addEventListener('submit', async (e) => {
   }));
 
   status.className = 'status ok';
-  status.textContent = `Welcome. Condition assigned: ${condition}. (Experiment flow — Phase 2 — coming soon.)`;
-  input.disabled = true;
-  form.querySelector('button').disabled = true;
+  status.textContent = `Welcome. Redirecting to experiment…`;
+  setTimeout(() => { window.location.href = 'experiment.html'; }, 400);
 });

@@ -89,3 +89,112 @@ code {
   border-radius: 3px;
   font-size: 0.85em;
 }
+
+/* ===== Experiment page ===== */
+
+body.experiment {
+  align-items: flex-start;
+  padding-top: 2rem;
+}
+
+.experiment-wrapper {
+  width: 100%;
+  max-width: 560px;
+  background: #fff;
+  border: 1px solid #e5e5e8;
+  border-radius: 10px;
+  padding: 1.5rem 1.5rem 2rem;
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.04);
+}
+
+.exp-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.puzzle-indicator {
+  font-weight: 600;
+  color: #333;
+}
+
+.badge {
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+  background: #eef;
+  color: #2b5df0;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.badge.att { background: #e0efff; color: #1a4dd8; }
+.badge.act { background: #ffe3e3; color: #c03030; }
+
+.signal-banner {
+  padding: 0.8rem 1rem;
+  border-radius: 6px;
+  font-weight: 500;
+  text-align: center;
+  margin-bottom: 1rem;
+  border: 1px solid transparent;
+  transition: opacity 180ms ease;
+}
+.signal-banner.att {
+  background: #e0efff;
+  border-color: #b9d4ff;
+  color: #1a4dd8;
+}
+.signal-banner.act {
+  background: #f0fff0;
+  border-color: #b6e4b6;
+  color: #1f6a1f;
+}
+.signal-banner.hidden {
+  display: none;
+}
+
+.board-wrapper {
+  display: flex;
+  justify-content: center;
+  margin: 0 auto 1rem;
+  position: relative;
+}
+
+#chess-board {
+  margin: 0 auto;
+}
+
+.exp-footer {
+  text-align: center;
+}
+
+.exp-footer .status {
+  color: #555;
+  margin: 0 0 0.8rem;
+}
+
+.hidden { display: none !important; }
+
+#next-button, #download-json, #download-csv {
+  font-size: 0.95rem;
+  padding: 0.55rem 1.1rem;
+}
+
+#finished-ui {
+  text-align: center;
+  padding: 2rem 1rem;
+}
+#finished-ui h1 { margin-top: 0; }
+.download-row {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  margin-top: 1.5rem;
+}
+
+.board-arrows {
+  pointer-events: none;
+  z-index: 5;
+}

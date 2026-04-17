@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Chess Signal Experiment — Play</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet"
+        href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="experiment">
+  <main class="experiment-wrapper">
+    <div id="experiment-ui">
+      <header class="exp-header">
+        <div id="puzzle-indicator" class="puzzle-indicator">Loading…</div>
+        <div id="condition-badge" class="badge"></div>
+      </header>
+
+      <div id="banner" class="signal-banner hidden" aria-live="polite"></div>
+
+      <div class="board-wrapper">
+        <div id="chess-board" style="width: 480px;"></div>
+      </div>
+
+      <footer class="exp-footer">
+        <p id="status" class="status">&nbsp;</p>
+        <button id="next-button" class="hidden">Next puzzle →</button>
+      </footer>
+    </div>
+
+    <div id="finished-ui" class="hidden">
+      <h1>All 6 puzzles complete</h1>
+      <p>Please download your session data using both buttons below, then notify the experimenter.</p>
+      <div class="download-row">
+        <button id="download-json">Download JSON</button>
+        <button id="download-csv">Download CSV</button>
+      </div>
+    </div>
+  </main>
+
+  <!-- Third-party -->
+  <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chess.js@0.10.3/chess.min.js"></script>
+  <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
+
+  <!-- App -->
+  <script src="js/puzzles.js"></script>
+  <script src="js/engine.js"></script>
+  <script src="js/storage.js"></script>
+  <script src="js/board.js"></script>
+  <script src="js/game.js"></script>
+  <script>
+    window.addEventListener('load', () => {
+      Game.start().catch(err => {
+        document.getElementById('status').textContent = 'Error: ' + (err.message || err);
+        console.error(err);
+      });
+      document.getElementById('next-button').addEventListener('click', Game.advance);
+      document.getElementById('download-json').addEventListener('click', Store.downloadJson);
+      document.getElementById('download-csv').addEventListener('click', Store.downloadCsv);
+      window.addEventListener('resize', () => Board.resize());
+    });
+  </script>
+</body>
+</html>
