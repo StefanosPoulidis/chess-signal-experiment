@@ -17,7 +17,7 @@ window.Board = (() => {
       position: fen,
       draggable: true,
       orientation: playerColor, // 'white' or 'black'
-      pieceTheme: 'https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/website/img/chesspieces/wikipedia/{piece}.png',
+      pieceTheme: 'https://cdn.jsdelivr.net/gh/oakmac/chessboardjs@master/website/img/chesspieces/wikipedia/{piece}.png',
       onDrop,
     });
     ensureOverlay();
