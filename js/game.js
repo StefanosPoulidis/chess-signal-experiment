@@ -14,7 +14,9 @@ window.Game = (() => {
   let evalBeforePlayer = null;
   let puzzleRecord = null;
   let timerInterval = null;
-  let acceptingInput = false; // true only when it's the player's turn
+  let acceptingInput = false;       // true only when it's the player's turn
+  let moveTimesThisPuzzle = [];     // seconds, appended per completed move
+  let advancing = false;            // guards double-click on "Next puzzle"
 
   // ---------- lifecycle ----------
 
@@ -42,8 +44,8 @@ window.Game = (() => {
 
   function cacheEls() {
     ['status', 'puzzle-indicator', 'condition-badge', 'banner', 'timer',
-     'move-counter', 'next-button', 'download-json', 'download-csv',
-     'finished-ui', 'experiment-ui']
+     'move-counter', 'clock-history', 'next-button', 'download-json',
+     'download-csv', 'finished-ui', 'experiment-ui']
       .forEach(id => { els[id] = document.getElementById(id); });
   }
 
@@ -57,7 +59,7 @@ window.Game = (() => {
     if (!els['timer']) return;
     const update = () => {
       const secs = (performance.now() - moveStartTs) / 1000;
-      els['timer'].textContent = secs.toFixed(1) + ' s';
+      els['timer'].textContent = secs.toFixed(1);
     };
     update();
     timerInterval = setInterval(update, 100);
@@ -68,6 +70,24 @@ window.Game = (() => {
       clearInterval(timerInterval);
       timerInterval = null;
     }
+  }
+
+  function renderClockHistory() {
+    const el = els['clock-history'];
+    if (!el) return;
+    el.innerHTML = '';
+    moveTimesThisPuzzle.forEach((t, i) => {
+      const chip = document.createElement('span');
+      chip.className = 'clock-chip';
+      const lbl = document.createElement('span');
+      lbl.className = 'chip-label';
+      lbl.textContent = `M${i + 1}`;
+      const val = document.createElement('span');
+      val.textContent = `${t.toFixed(1)}s`;
+      chip.appendChild(lbl);
+      chip.appendChild(val);
+      el.appendChild(chip);
+    });
   }
 
   // ---------- puzzle flow ----------
@@ -82,6 +102,9 @@ window.Game = (() => {
     chess = new Chess(puzzle.startFen);
     moveIdx = 0;
     evalBeforePlayer = null;
+    moveTimesThisPuzzle = [];
+    renderClockHistory();
+    if (els['timer']) els['timer'].textContent = '0.0';
 
     els['condition-badge'].textContent = session.participant.condition.toUpperCase();
     els['condition-badge'].className = 'badge ' + session.participant.condition;
@@ -220,6 +243,11 @@ window.Game = (() => {
     // Sync the visual board to chess.js state. Needed for castling (rook moves),
     // en passant (captured pawn removed), and promotion (pawn -> queen).
     Board.setPosition(fenAfterPlayer);
+
+    // Record the time chip immediately — don't make the player wait for Stockfish.
+    moveTimesThisPuzzle.push(timeMs / 1000);
+    renderClockHistory();
+
     setStatus('Analyzing your move…');
     const after = await Engine.analyze(fenAfterPlayer);
 
@@ -293,11 +321,15 @@ window.Game = (() => {
   }
 
   function advance() {
+    if (advancing) return;     // guard against double-click
+    advancing = true;
     els['next-button'].classList.add('hidden');
-    loadNextPuzzle();
+    loadNextPuzzle().finally(() => { advancing = false; });
   }
 
   function finishSession() {
+    stopTimer();
+    acceptingInput = false;
     els['experiment-ui'].classList.add('hidden');
     els['finished-ui'].classList.remove('hidden');
     setStatus('All puzzles complete. Please download your session data.');

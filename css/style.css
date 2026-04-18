@@ -134,7 +134,7 @@ body.experiment {
 
 .move-meta {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-start;
   align-items: center;
   font-size: 0.85rem;
   color: #666;
@@ -146,15 +146,68 @@ body.experiment {
   font-weight: 500;
 }
 
-.timer {
+.chess-clock {
+  background: #1a1a1a;
+  border-radius: 10px;
+  padding: 1rem 1.2rem 0.9rem;
+  margin: 1rem auto 1rem;
+  text-align: center;
+  max-width: 460px;
+  box-shadow: inset 0 0 0 1px #2a2a2a;
+}
+
+.clock-display {
+  font-family: "Menlo", "SF Mono", ui-monospace, monospace;
+  font-size: 2.6rem;
+  font-weight: 600;
+  color: #33ff66;
+  line-height: 1;
   font-variant-numeric: tabular-nums;
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  background: #f4f4f6;
-  padding: 0.15rem 0.5rem;
+  letter-spacing: 0.02em;
+  text-shadow: 0 0 12px rgba(51, 255, 102, 0.3);
+}
+
+.clock-unit-inline {
+  font-size: 0.55em;
+  margin-left: 0.2em;
+  color: #6abc7d;
+}
+
+.clock-label {
+  font-size: 0.7rem;
+  color: #777;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  margin-top: 0.35rem;
+}
+
+.clock-history {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  margin-top: 0.75rem;
+  min-height: 1.6em;
+}
+
+.clock-chip {
+  background: #2a2a2a;
+  color: #b0e0b0;
+  padding: 0.2rem 0.55rem;
   border-radius: 4px;
-  color: #333;
-  min-width: 3.5em;
-  text-align: right;
+  font-family: "Menlo", "SF Mono", ui-monospace, monospace;
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35em;
+}
+
+.clock-chip .chip-label {
+  color: #6abc7d;
+  font-size: 0.75em;
+  letter-spacing: 0.05em;
 }
 
 .signal-banner {

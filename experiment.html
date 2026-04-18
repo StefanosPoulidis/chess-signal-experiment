@@ -17,7 +17,6 @@
       </header>
       <div class="move-meta">
         <span id="move-counter" class="move-counter"></span>
-        <span id="timer" class="timer">0.0 s</span>
       </div>
 
       <div id="banner" class="signal-banner hidden" aria-live="polite"></div>
@@ -28,6 +27,13 @@
 
       <footer class="exp-footer">
         <p id="status" class="status">&nbsp;</p>
+
+        <div class="chess-clock">
+          <div class="clock-display"><span id="timer">0.0</span><span class="clock-unit-inline">s</span></div>
+          <div class="clock-label">Time on current move</div>
+          <div id="clock-history" class="clock-history"></div>
+        </div>
+
         <button id="next-button" class="hidden">Next puzzle →</button>
       </footer>
     </div>
