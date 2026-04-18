@@ -13,6 +13,8 @@ window.Game = (() => {
   let moveStartTs = 0;    // ms
   let evalBeforePlayer = null;
   let puzzleRecord = null;
+  let timerInterval = null;
+  let acceptingInput = false; // true only when it's the player's turn
 
   // ---------- lifecycle ----------
 
@@ -40,12 +42,32 @@ window.Game = (() => {
 
   function cacheEls() {
     ['status', 'puzzle-indicator', 'condition-badge', 'banner', 'timer',
-     'eval-display', 'next-button', 'download-json', 'download-csv', 'finished-ui', 'experiment-ui']
+     'move-counter', 'next-button', 'download-json', 'download-csv',
+     'finished-ui', 'experiment-ui']
       .forEach(id => { els[id] = document.getElementById(id); });
   }
 
   function setStatus(text) {
     if (els['status']) els['status'].textContent = text;
+  }
+
+  function startTimer() {
+    stopTimer();
+    moveStartTs = performance.now();
+    if (!els['timer']) return;
+    const update = () => {
+      const secs = (performance.now() - moveStartTs) / 1000;
+      els['timer'].textContent = secs.toFixed(1) + ' s';
+    };
+    update();
+    timerInterval = setInterval(update, 100);
+  }
+
+  function stopTimer() {
+    if (timerInterval) {
+      clearInterval(timerInterval);
+      timerInterval = null;
+    }
   }
 
   // ---------- puzzle flow ----------
@@ -104,7 +126,16 @@ window.Game = (() => {
 
     showSignal(bestMoveUci, bestMoveSan);
     setStatus('Your move.');
-    moveStartTs = performance.now();
+    updateMoveCounter();
+    acceptingInput = true;
+    startTimer();
+  }
+
+  function updateMoveCounter() {
+    if (els['move-counter']) {
+      els['move-counter'].textContent =
+        `Move ${moveIdx + 1} of ${window.MOVES_PER_PUZZLE}`;
+    }
   }
 
   function showSignal(bestMoveUci, bestMoveSan) {
@@ -132,34 +163,45 @@ window.Game = (() => {
 
   // ---------- move handling ----------
 
-  async function handleDrop(source, target, piece, newPos, oldPos, orientation) {
+  // Synchronous: chessboard.js requires a sync return. If illegal -> 'snapback'.
+  // If legal, kick off async post-move logic.
+  function handleDrop(source, target, piece, newPos, oldPos, orientation) {
+    if (!acceptingInput) return 'snapback';
     if (source === target) return 'snapback';
-    // Always promote to queen for MVP
-    const move = chess.move({ from: source, to: target, promotion: 'q' });
-    if (!move) return 'snapback';
 
+    // Snapshot time + pre-move FEN before mutating chess.js state.
     const timeMs = Math.round(performance.now() - moveStartTs);
-    hideSignal();
+    const fenBeforePlayer = chess.fen();
 
-    const fenBefore = move.before || chess.fen(); // chess.js 0.10.x may not expose .before
-    // For v0.10.x, reconstruct fenBefore by undoing + redoing.
-    let fenBeforePlayer, fenAfterPlayer;
-    try {
-      fenAfterPlayer = chess.fen();
-      chess.undo();
-      fenBeforePlayer = chess.fen();
-      chess.move({ from: source, to: target, promotion: 'q' });
-    } catch {
-      fenBeforePlayer = puzzle.startFen;
-      fenAfterPlayer = chess.fen();
+    const move = chess.move({ from: source, to: target, promotion: 'q' });
+    if (!move) {
+      setStatus('Illegal move — try another.');
+      return 'snapback';
     }
 
-    setStatus('Analyzing…');
+    acceptingInput = false;
+    stopTimer();
+    const fenAfterPlayer = chess.fen();
+    // Fire-and-forget the async flow
+    processValidMove({ move, source, target, timeMs, fenBeforePlayer, fenAfterPlayer })
+      .catch(err => {
+        console.error(err);
+        setStatus('Error: ' + (err.message || err));
+      });
+    // Returning nothing (undefined) -> chessboard.js keeps the piece on target.
+  }
+
+  async function processValidMove({ move, source, target, timeMs, fenBeforePlayer, fenAfterPlayer }) {
+    hideSignal();
+    setStatus('Analyzing your move…');
     const after = await Engine.analyze(fenAfterPlayer);
 
     const record = {
       moveNumber: moveIdx + 1,
-      playerMove: { san: move.san, uci: source + target + (move.promotion ? move.promotion : '') },
+      playerMove: {
+        san: move.san,
+        uci: source + target + (move.promotion ? move.promotion : ''),
+      },
       fenBeforePlayer,
       fenAfterPlayer,
       timeMs,
@@ -170,11 +212,12 @@ window.Game = (() => {
       evalAfterStockfishWhitePov: null,
     };
 
-    // If we still have moves to make (we need another player move after this),
-    // Stockfish replies as opponent.
     const willContinue = (moveIdx + 1) < window.MOVES_PER_PUZZLE;
     if (willContinue && !chess.game_over()) {
       setStatus('Opponent is thinking…');
+      // Delay so player has ~1 second to see their own move on the board.
+      await sleep(1000);
+
       const sfBest = after.bestMoveUci;
       if (sfBest) {
         const mvObj = chess.move({
@@ -195,19 +238,24 @@ window.Game = (() => {
 
     puzzleRecord.moves.push(record);
     moveIdx += 1;
-    Store.update(s => {
-      // Only persist in-progress record once committed at puzzle end.
-    });
 
     if (moveIdx >= window.MOVES_PER_PUZZLE || chess.game_over()) {
       await finishPuzzle();
     } else {
       setStatus('Your move.');
-      moveStartTs = performance.now();
+      updateMoveCounter();
+      acceptingInput = true;
+      startTimer();
     }
   }
 
+  function sleep(ms) {
+    return new Promise(res => setTimeout(res, ms));
+  }
+
   async function finishPuzzle() {
+    stopTimer();
+    acceptingInput = false;
     Store.update(s => {
       s.puzzles.push(puzzleRecord);
       s.currentIdx += 1;
