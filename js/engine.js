@@ -10,13 +10,10 @@ window.Engine = (() => {
   const DEFAULT_DEPTH = 15;
 
   let worker = null;
-  let buffer = [];
   let listeners = [];
 
   function onMessage(e) {
     const line = typeof e.data === 'string' ? e.data : '';
-    buffer.push(line);
-    // Pass to any pending listeners (filter out the ones that resolved).
     listeners = listeners.filter(l => {
       const result = l.matcher(line);
       if (result !== false && result !== undefined) {
@@ -37,18 +34,33 @@ window.Engine = (() => {
     worker.postMessage(cmd);
   }
 
+  function withTimeout(promise, ms, label) {
+    return Promise.race([
+      promise,
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error(`Engine timeout: ${label}`)), ms)
+      ),
+    ]);
+  }
+
   async function init() {
     if (worker) return;
-    const res = await fetch(STOCKFISH_URL);
+    const res = await withTimeout(fetch(STOCKFISH_URL), 15000, 'fetch stockfish');
     if (!res.ok) throw new Error(`Stockfish fetch failed: ${res.status}`);
     const blob = await res.blob();
     const blobUrl = URL.createObjectURL(blob);
     worker = new Worker(blobUrl);
     worker.onmessage = onMessage;
     send('uci');
-    await waitFor(l => l.startsWith('uciok') ? true : false);
+    await withTimeout(
+      waitFor(l => l.startsWith('uciok') ? true : false),
+      10000, 'uciok'
+    );
     send('isready');
-    await waitFor(l => l.startsWith('readyok') ? true : false);
+    await withTimeout(
+      waitFor(l => l.startsWith('readyok') ? true : false),
+      10000, 'readyok'
+    );
   }
 
   // Convert Stockfish cp (side-to-move POV) to white's POV using FEN.

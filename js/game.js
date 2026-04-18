@@ -104,14 +104,17 @@ window.Game = (() => {
     const { evalWhitePov, bestMoveUci } = await Engine.analyze(puzzle.startFen);
     evalBeforePlayer = evalWhitePov;
 
-    // Convert bestMoveUci to SAN
-    const testChess = new Chess(puzzle.startFen);
-    const moveObj = testChess.move({
-      from: bestMoveUci.slice(0, 2),
-      to: bestMoveUci.slice(2, 4),
-      promotion: bestMoveUci.length === 5 ? bestMoveUci[4] : undefined,
-    });
-    const bestMoveSan = moveObj ? moveObj.san : bestMoveUci;
+    // Convert bestMoveUci to SAN (defensive: engine may return "(none)" or invalid UCI)
+    let bestMoveSan = null;
+    if (isValidUci(bestMoveUci)) {
+      const testChess = new Chess(puzzle.startFen);
+      const moveObj = testChess.move({
+        from: bestMoveUci.slice(0, 2),
+        to: bestMoveUci.slice(2, 4),
+        promotion: bestMoveUci.length === 5 ? bestMoveUci[4] : undefined,
+      });
+      bestMoveSan = moveObj ? moveObj.san : null;
+    }
 
     puzzleRecord = {
       id: puzzle.id,
@@ -147,11 +150,23 @@ window.Game = (() => {
       banner.textContent = 'There is a unique optimal move here!';
     } else if (cond === 'act') {
       banner.classList.add('act');
-      banner.textContent = `Best move: ${bestMoveSan}`;
-      const from = bestMoveUci.slice(0, 2);
-      const to = bestMoveUci.slice(2, 4);
-      Board.drawArrow(from, to, puzzle.playerColor);
+      if (bestMoveSan && isValidUci(bestMoveUci)) {
+        banner.textContent = `Best move: ${bestMoveSan}`;
+        Board.drawArrow(bestMoveUci.slice(0, 2), bestMoveUci.slice(2, 4), puzzle.playerColor);
+      } else {
+        // Fallback: don't render a bogus arrow / label.
+        banner.textContent = 'No recommended move available for this position.';
+      }
     }
+  }
+
+  // Valid UCI: 4 chars (e.g., "e2e4") or 5 chars with promotion ("e7e8q"),
+  // all chars in a-h / 1-8 for squares, promotion piece in qrbn.
+  function isValidUci(uci) {
+    if (typeof uci !== 'string') return false;
+    if (uci.length !== 4 && uci.length !== 5) return false;
+    if (!/^[a-h][1-8][a-h][1-8]([qrbn])?$/.test(uci)) return false;
+    return true;
   }
 
   function hideSignal() {
@@ -175,7 +190,7 @@ window.Game = (() => {
 
     const move = chess.move({ from: source, to: target, promotion: 'q' });
     if (!move) {
-      setStatus('Illegal move — try another.');
+      showIllegalHint();
       return 'snapback';
     }
 
@@ -191,8 +206,20 @@ window.Game = (() => {
     // Returning nothing (undefined) -> chessboard.js keeps the piece on target.
   }
 
+  let illegalHintTimeout = null;
+  function showIllegalHint() {
+    setStatus('Illegal move — try another.');
+    if (illegalHintTimeout) clearTimeout(illegalHintTimeout);
+    illegalHintTimeout = setTimeout(() => {
+      if (acceptingInput) setStatus('Your move.');
+    }, 2500);
+  }
+
   async function processValidMove({ move, source, target, timeMs, fenBeforePlayer, fenAfterPlayer }) {
     hideSignal();
+    // Sync the visual board to chess.js state. Needed for castling (rook moves),
+    // en passant (captured pawn removed), and promotion (pawn -> queen).
+    Board.setPosition(fenAfterPlayer);
     setStatus('Analyzing your move…');
     const after = await Engine.analyze(fenAfterPlayer);
 
@@ -219,7 +246,7 @@ window.Game = (() => {
       await sleep(1000);
 
       const sfBest = after.bestMoveUci;
-      if (sfBest) {
+      if (isValidUci(sfBest)) {
         const mvObj = chess.move({
           from: sfBest.slice(0, 2),
           to: sfBest.slice(2, 4),
