@@ -11,7 +11,8 @@ window.Game = (() => {
   let chess = null;       // chess.js instance
   let moveIdx = 0;        // 0..MOVES_PER_PUZZLE - 1 (next player move)
   let moveStartTs = 0;    // ms
-  let evalBeforePlayer = null;
+  let evalBeforeMoveCp = null;     // cp at current fen_before_move (white's POV)
+  let evalBeforeMoveMate = null;   // mate distance, or null
   let puzzleRecord = null;
   let timerInterval = null;
   let acceptingInput = false;       // true only when it's the player's turn
@@ -102,7 +103,8 @@ window.Game = (() => {
     puzzle = PUZZLES.find(p => p.id === pid);
     chess = new Chess(puzzle.startFen);
     moveIdx = 0;
-    evalBeforePlayer = null;
+    evalBeforeMoveCp = null;
+    evalBeforeMoveMate = null;
     moveTimesThisPuzzle = [];
     renderClockHistory();
     if (els['timer']) els['timer'].textContent = '0.0';
@@ -128,33 +130,35 @@ window.Game = (() => {
     Board.resize();
 
     setStatus('Analyzing starting position…');
-    const { evalWhitePov, bestMoveUci } = await Engine.analyze(puzzle.startFen);
-    evalBeforePlayer = evalWhitePov;
+    const startAnalysis = await Engine.analyze(puzzle.startFen);
+    evalBeforeMoveCp = startAnalysis.cp;
+    evalBeforeMoveMate = startAnalysis.mate;
 
     // Convert bestMoveUci to SAN (defensive: engine may return "(none)" or invalid UCI)
     let bestMoveSan = null;
-    if (isValidUci(bestMoveUci)) {
+    if (isValidUci(startAnalysis.bestMoveUci)) {
       const testChess = new Chess(puzzle.startFen);
       const moveObj = testChess.move({
-        from: bestMoveUci.slice(0, 2),
-        to: bestMoveUci.slice(2, 4),
-        promotion: bestMoveUci.length === 5 ? bestMoveUci[4] : undefined,
+        from: startAnalysis.bestMoveUci.slice(0, 2),
+        to: startAnalysis.bestMoveUci.slice(2, 4),
+        promotion: startAnalysis.bestMoveUci.length === 5 ? startAnalysis.bestMoveUci[4] : undefined,
       });
       bestMoveSan = moveObj ? moveObj.san : null;
     }
 
     puzzleRecord = {
-      id: puzzle.id,
+      puzzleId: puzzle.id,
       playerColor: puzzle.playerColor,
-      order: session.currentIdx + 1,
+      puzzleOrder: session.currentIdx + 1,
       startFen: puzzle.startFen,
-      startEvalWhitePov: evalWhitePov,
-      startBestMoveUci: bestMoveUci,
+      startEvalCp: startAnalysis.cp,
+      startEvalMate: startAnalysis.mate,
       startBestMoveSan: bestMoveSan,
+      startBestMoveUci: startAnalysis.bestMoveUci,
       moves: [],
     };
 
-    showSignal(bestMoveUci, bestMoveSan);
+    showSignal(startAnalysis.bestMoveUci, bestMoveSan);
     setStatus('Your move.');
     updateMoveCounter();
     acceptingInput = true;
@@ -388,11 +392,8 @@ window.Game = (() => {
 
   async function processValidMove({ move, source, target, timeMs, fenBeforePlayer, fenAfterPlayer }) {
     hideSignal();
-    // Sync the visual board to chess.js state. Needed for castling (rook moves),
-    // en passant (captured pawn removed), and promotion (pawn -> queen).
     Board.setPosition(fenAfterPlayer);
 
-    // Record the time chip immediately — don't make the player wait for Stockfish.
     moveTimesThisPuzzle.push(timeMs / 1000);
     renderClockHistory();
 
@@ -401,24 +402,26 @@ window.Game = (() => {
 
     const record = {
       moveNumber: moveIdx + 1,
+      fenBeforeMove: fenBeforePlayer,
+      evalBeforeMoveCp: evalBeforeMoveCp,
+      evalBeforeMoveMate: evalBeforeMoveMate,
       playerMove: {
         san: move.san,
         uci: source + target + (move.promotion ? move.promotion : ''),
       },
-      fenBeforePlayer,
-      fenAfterPlayer,
       timeMs,
-      evalBeforePlayerWhitePov: evalBeforePlayer,
-      evalAfterPlayerWhitePov: after.evalWhitePov,
+      fenAfterMove: fenAfterPlayer,
+      evalAfterMoveCp: after.cp,
+      evalAfterMoveMate: after.mate,
       stockfishReply: null,
       fenAfterStockfish: null,
-      evalAfterStockfishWhitePov: null,
+      evalAfterStockfishCp: null,
+      evalAfterStockfishMate: null,
     };
 
     const willContinue = (moveIdx + 1) < window.MOVES_PER_PUZZLE;
     if (willContinue && !chess.game_over()) {
       setStatus('Opponent is thinking…');
-      // Delay so player has ~1 second to see their own move on the board.
       await sleep(1000);
 
       const sfBest = after.bestMoveUci;
@@ -433,8 +436,10 @@ window.Game = (() => {
           record.fenAfterStockfish = chess.fen();
           Board.setPosition(chess.fen());
           const afterSf = await Engine.analyze(chess.fen());
-          record.evalAfterStockfishWhitePov = afterSf.evalWhitePov;
-          evalBeforePlayer = afterSf.evalWhitePov;
+          record.evalAfterStockfishCp = afterSf.cp;
+          record.evalAfterStockfishMate = afterSf.mate;
+          evalBeforeMoveCp = afterSf.cp;
+          evalBeforeMoveMate = afterSf.mate;
         }
       }
     }

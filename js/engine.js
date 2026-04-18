@@ -63,14 +63,12 @@ window.Engine = (() => {
     );
   }
 
-  // Convert Stockfish cp (side-to-move POV) to white's POV using FEN.
-  function toWhitePov(cp, fen) {
-    const stm = fen.split(' ')[1]; // 'w' or 'b'
-    return stm === 'b' ? -cp : cp;
-  }
-
-  // Returns { evalWhitePov, bestMoveUci, mate }.
-  // mate: null or integer (signed from side-to-move POV, then flipped).
+  // Returns { cp, mate, bestMoveUci }, all in WHITE'S POV.
+  //   cp:   integer centipawns (Stockfish's native unit). Positive = white advantage.
+  //         For mate scores, cp is set to ±10000 as a conventional sentinel.
+  //   mate: null for normal scores. For mate scores, signed half-move distance;
+  //         positive = white delivers mate, negative = black delivers mate.
+  //   bestMoveUci: Stockfish's best move in UCI format, or "(none)" if no moves.
   async function analyze(fen, depth = DEFAULT_DEPTH) {
     if (!worker) throw new Error('Engine not initialized');
     send('ucinewgame');
@@ -94,20 +92,22 @@ window.Engine = (() => {
     const bestMoveUci = bestMoveLine.split(' ')[1];
     const lastInfo = infoLines[infoLines.length - 1] || '';
     const m = lastInfo.match(/score (cp|mate) (-?\d+)/);
-    let evalWhitePov = null;
+
+    // Stockfish cp / mate are from side-to-move's POV. Flip to white's POV.
+    const stm = fen.split(' ')[1];
+    const flip = (x) => stm === 'b' ? -x : x;
+
+    let cp = null;
     let mate = null;
     if (m) {
       if (m[1] === 'cp') {
-        evalWhitePov = toWhitePov(parseInt(m[2], 10) / 100, fen);
+        cp = flip(parseInt(m[2], 10));
       } else {
-        const mateInN = parseInt(m[2], 10);
-        // Represent mate as large eval with correct sign.
-        const stmSign = mateInN >= 0 ? 1 : -1;
-        evalWhitePov = toWhitePov(stmSign * 100, fen);
-        mate = toWhitePov(mateInN, fen) | 0; // flip sign same way
+        mate = flip(parseInt(m[2], 10));
+        cp = mate > 0 ? 10000 : (mate < 0 ? -10000 : 0);
       }
     }
-    return { evalWhitePov, bestMoveUci, mate };
+    return { cp, mate, bestMoveUci };
   }
 
   return { init, analyze };

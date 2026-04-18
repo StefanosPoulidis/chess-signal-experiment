@@ -47,42 +47,53 @@ window.Store = (() => {
     return JSON.stringify(state, null, 2);
   }
 
+  // CSV: one row per player move. All *_cp columns are centipawns from white's POV
+  // (positive = white advantage). *_mate is mate distance in half-moves (signed
+  // same way: positive = white delivers mate). Blank when engine had no score.
   function toCsv() {
     const state = load();
     if (!state) return '';
-    const rows = [
-      ['username', 'condition', 'puzzle_id', 'player_color', 'puzzle_order',
-       'start_fen', 'start_eval_white_pov', 'start_best_move_san',
-       'move_number', 'player_move_san', 'player_move_uci',
-       'fen_before_player', 'fen_after_player',
-       'time_ms',
-       'eval_before_player_white_pov', 'eval_after_player_white_pov',
-       'stockfish_reply_san', 'stockfish_reply_uci',
-       'fen_after_stockfish', 'eval_after_stockfish_white_pov'],
+    const header = [
+      'username', 'condition',
+      'puzzle_id', 'puzzle_order', 'player_color',
+      'start_fen', 'start_eval_cp', 'start_eval_mate',
+      'start_best_move_san', 'start_best_move_uci',
+      'move_number',
+      'fen_before_move', 'eval_before_move_cp', 'eval_before_move_mate',
+      'player_move_san', 'player_move_uci', 'time_ms',
+      'fen_after_move', 'eval_after_move_cp', 'eval_after_move_mate',
+      'stockfish_reply_san', 'stockfish_reply_uci',
+      'fen_after_stockfish', 'eval_after_stockfish_cp', 'eval_after_stockfish_mate',
     ];
+    const rows = [header];
     for (const p of state.puzzles) {
       for (const m of p.moves) {
         rows.push([
           state.participant.username,
           state.participant.condition,
-          p.id,
+          p.puzzleId,
+          p.puzzleOrder,
           p.playerColor,
-          p.order,
           p.startFen,
-          p.startEvalWhitePov,
+          p.startEvalCp ?? '',
+          p.startEvalMate ?? '',
           p.startBestMoveSan || '',
+          p.startBestMoveUci || '',
           m.moveNumber,
+          m.fenBeforeMove,
+          m.evalBeforeMoveCp ?? '',
+          m.evalBeforeMoveMate ?? '',
           m.playerMove.san,
           m.playerMove.uci,
-          m.fenBeforePlayer,
-          m.fenAfterPlayer,
           m.timeMs,
-          m.evalBeforePlayerWhitePov,
-          m.evalAfterPlayerWhitePov,
+          m.fenAfterMove,
+          m.evalAfterMoveCp ?? '',
+          m.evalAfterMoveMate ?? '',
           m.stockfishReply ? m.stockfishReply.san : '',
           m.stockfishReply ? m.stockfishReply.uci : '',
           m.fenAfterStockfish || '',
-          m.evalAfterStockfishWhitePov ?? '',
+          m.evalAfterStockfishCp ?? '',
+          m.evalAfterStockfishMate ?? '',
         ]);
       }
     }
