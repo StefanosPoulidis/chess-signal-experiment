@@ -17,6 +17,7 @@ window.Game = (() => {
   let acceptingInput = false;       // true only when it's the player's turn
   let moveTimesThisPuzzle = [];     // seconds, appended per completed move
   let advancing = false;            // guards double-click on "Next puzzle"
+  let selectedSquare = null;        // click-to-move: currently selected origin square
 
   // ---------- lifecycle ----------
 
@@ -45,7 +46,7 @@ window.Game = (() => {
   function cacheEls() {
     ['status', 'puzzle-indicator', 'condition-badge', 'banner', 'timer',
      'move-counter', 'clock-history', 'next-button', 'download-json',
-     'download-csv', 'finished-ui', 'experiment-ui']
+     'download-csv', 'finished-ui', 'experiment-ui', 'promotion-modal']
       .forEach(id => { els[id] = document.getElementById(id); });
   }
 
@@ -113,12 +114,15 @@ window.Game = (() => {
 
     // Initial board
     Board.destroy();
+    selectedSquare = null;
     Board.create({
       elementId: 'chess-board',
       fen: puzzle.startFen,
       playerColor: puzzle.playerColor,
       onDrop: handleDrop,
+      onDragStart: handleDragStart,
     });
+    Board.setupClickHandler(onSquareClick);
     // Small delay so DOM measures correctly
     await new Promise(r => setTimeout(r, 30));
     Board.resize();
@@ -201,32 +205,176 @@ window.Game = (() => {
 
   // ---------- move handling ----------
 
-  // Synchronous: chessboard.js requires a sync return. If illegal -> 'snapback'.
-  // If legal, kick off async post-move logic.
+  // Prevent dragging opponent pieces or dragging at all when it's not the player's turn.
+  function handleDragStart(source, piece) {
+    if (!acceptingInput) return false;
+    if (!puzzle) return false;
+    const playerLetter = puzzle.playerColor === 'white' ? 'w' : 'b';
+    if (piece[0] !== playerLetter) return false;
+    // Any in-progress click selection should clear on drag start.
+    clearSelection();
+    return true;
+  }
+
+  // Chessboard.js onDrop is sync-only. Returning 'snapback' reverts the piece.
   function handleDrop(source, target, piece, newPos, oldPos, orientation) {
     if (!acceptingInput) return 'snapback';
-    if (source === target) return 'snapback';
+    if (source === target || target === 'offboard') return 'snapback';
+    const accepted = attemptMove(source, target, piece);
+    return accepted ? undefined : 'snapback';
+  }
 
-    // Snapshot time + pre-move FEN before mutating chess.js state.
+  // Click-to-move: first click selects a friendly piece, second click tries to move.
+  function onSquareClick(square) {
+    if (!acceptingInput) return;
+    const playerLetter = puzzle.playerColor === 'white' ? 'w' : 'b';
+    const piece = chess.get(square);
+
+    if (selectedSquare === null) {
+      if (!piece || piece.color !== playerLetter) return;
+      selectSquare(square);
+      return;
+    }
+    if (square === selectedSquare) {
+      clearSelection();
+      return;
+    }
+    if (piece && piece.color === playerLetter) {
+      // Switch selection to another friendly piece.
+      clearSelection();
+      selectSquare(square);
+      return;
+    }
+    // Attempt move from selectedSquare -> square.
+    const from = selectedSquare;
+    clearSelection();
+    const fromPiece = chess.get(from);
+    if (!fromPiece) return;
+    const pieceStr = fromPiece.color + fromPiece.type.toUpperCase();
+    const accepted = attemptMove(from, square, pieceStr);
+    // Regular moves are visually synced via Board.setPosition in processValidMove.
+    // Promotion moves are synced after the modal choice. Illegal attempts: no-op.
+    if (!accepted) {
+      // Nothing else to do — illegal-hint already shown.
+    }
+  }
+
+  function selectSquare(square) {
+    selectedSquare = square;
+    Board.highlight(square, 'sq-selected');
+    const moves = chess.moves({ square, verbose: true });
+    for (const m of moves) Board.highlight(m.to, 'sq-target');
+  }
+
+  function clearSelection() {
+    if (selectedSquare === null) return;
+    selectedSquare = null;
+    Board.clearHighlight('sq-selected');
+    Board.clearHighlight('sq-target');
+  }
+
+  // Shared move logic for drag-drop and click-to-move.
+  // Returns true if the move was accepted or a promotion modal was opened.
+  function attemptMove(source, target, pieceStr) {
+    if (source === target) return false;
+
+    // Promotion path: show chooser, leave chess.js state untouched for now.
+    if (isPromotionMove(source, target, pieceStr)) {
+      const probe = new Chess(chess.fen());
+      if (!probe.move({ from: source, to: target, promotion: 'q' })) {
+        showIllegalHint();
+        return false;
+      }
+      acceptingInput = false;
+      openPromotionModal(source, target);
+      return true;
+    }
+
     const timeMs = Math.round(performance.now() - moveStartTs);
     const fenBeforePlayer = chess.fen();
-
     const move = chess.move({ from: source, to: target, promotion: 'q' });
     if (!move) {
       showIllegalHint();
-      return 'snapback';
+      return false;
     }
-
     acceptingInput = false;
     stopTimer();
     const fenAfterPlayer = chess.fen();
-    // Fire-and-forget the async flow
     processValidMove({ move, source, target, timeMs, fenBeforePlayer, fenAfterPlayer })
       .catch(err => {
         console.error(err);
         setStatus('Error: ' + (err.message || err));
       });
-    // Returning nothing (undefined) -> chessboard.js keeps the piece on target.
+    return true;
+  }
+
+  function isPromotionMove(source, target, piece) {
+    if (!piece) return false;
+    if (piece[1] !== 'P') return false;
+    if (piece[0] === 'w' && source[1] === '7' && target[1] === '8') return true;
+    if (piece[0] === 'b' && source[1] === '2' && target[1] === '1') return true;
+    return false;
+  }
+
+  // ---------- promotion chooser ----------
+
+  const PIECE_SYMBOLS = {
+    white: { q: '\u2655', r: '\u2656', b: '\u2657', n: '\u2658' },
+    black: { q: '\u265B', r: '\u265C', b: '\u265D', n: '\u265E' },
+  };
+
+  function openPromotionModal(source, target) {
+    const modal = els['promotion-modal'];
+    if (!modal) {
+      // Fallback: no modal in DOM, just queen-promote.
+      completePromotion(source, target, 'q');
+      return;
+    }
+    const symbols = PIECE_SYMBOLS[puzzle.playerColor] || PIECE_SYMBOLS.white;
+    const buttons = modal.querySelectorAll('.promo-btn');
+    buttons.forEach(btn => {
+      const piece = btn.getAttribute('data-piece');
+      const name = btn.getAttribute('data-name');
+      btn.innerHTML = `<span class="promo-piece">${symbols[piece]}</span><span>${name}</span>`;
+      btn.onclick = () => {
+        closePromotionModal();
+        completePromotion(source, target, piece);
+      };
+    });
+    const overlay = modal.querySelector('.promotion-overlay');
+    overlay.onclick = () => {
+      closePromotionModal();
+      // Pawn is already visually back on source rank (snapback). Let player retry.
+      acceptingInput = true;
+      setStatus('Your move.');
+    };
+    modal.classList.remove('hidden');
+  }
+
+  function closePromotionModal() {
+    const modal = els['promotion-modal'];
+    if (modal) modal.classList.add('hidden');
+  }
+
+  function completePromotion(source, target, promotion) {
+    const timeMs = Math.round(performance.now() - moveStartTs);
+    const fenBeforePlayer = chess.fen();
+    const move = chess.move({ from: source, to: target, promotion });
+    if (!move) {
+      // Should not happen (we pre-validated), but restore input if it does.
+      acceptingInput = true;
+      setStatus('Illegal move — try another.');
+      return;
+    }
+    stopTimer();
+    // Snap the board to the correct post-promotion position (pawn -> chosen piece).
+    Board.setPosition(chess.fen());
+    const fenAfterPlayer = chess.fen();
+    processValidMove({ move, source, target, timeMs, fenBeforePlayer, fenAfterPlayer })
+      .catch(err => {
+        console.error(err);
+        setStatus('Error: ' + (err.message || err));
+      });
   }
 
   let illegalHintTimeout = null;

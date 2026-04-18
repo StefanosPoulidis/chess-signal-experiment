@@ -11,7 +11,7 @@ window.Board = (() => {
   let svgOverlay = null;
   let containerEl = null;
 
-  function create({ elementId, fen, playerColor, onDrop }) {
+  function create({ elementId, fen, playerColor, onDrop, onDragStart }) {
     containerEl = document.getElementById(elementId);
     board = Chessboard(elementId, {
       position: fen,
@@ -19,9 +19,42 @@ window.Board = (() => {
       orientation: playerColor, // 'white' or 'black'
       pieceTheme: 'https://cdn.jsdelivr.net/gh/oakmac/chessboardjs@master/website/img/chesspieces/wikipedia/{piece}.png',
       onDrop,
+      onDragStart,
     });
     ensureOverlay();
     return board;
+  }
+
+  // Click-to-move support. Handler is called with the clicked square ('e4').
+  function setupClickHandler(handler) {
+    if (!containerEl) return;
+    const wrapper = containerEl.querySelector('[class^="board-"]') || containerEl;
+    if (wrapper._clickHandler) {
+      wrapper.removeEventListener('click', wrapper._clickHandler);
+    }
+    const fn = (e) => {
+      const sq = e.target.closest('[data-square]');
+      if (!sq) return;
+      const square = sq.getAttribute('data-square');
+      if (square) handler(square);
+    };
+    wrapper.addEventListener('click', fn);
+    wrapper._clickHandler = fn;
+  }
+
+  function highlight(square, className) {
+    if (!containerEl) return;
+    const wrapper = containerEl.querySelector('[class^="board-"]');
+    if (!wrapper) return;
+    const sq = wrapper.querySelector(`[data-square="${square}"]`);
+    if (sq) sq.classList.add(className);
+  }
+
+  function clearHighlight(className) {
+    if (!containerEl) return;
+    const wrapper = containerEl.querySelector('[class^="board-"]');
+    if (!wrapper) return;
+    wrapper.querySelectorAll('.' + className).forEach(el => el.classList.remove(className));
   }
 
   function ensureOverlay() {
@@ -108,5 +141,6 @@ window.Board = (() => {
     if (svgOverlay) { svgOverlay.remove(); svgOverlay = null; }
   }
 
-  return { create, drawArrow, clearArrows, setPosition, resize, destroy };
+  return { create, drawArrow, clearArrows, setPosition, resize, destroy,
+           setupClickHandler, highlight, clearHighlight };
 })();

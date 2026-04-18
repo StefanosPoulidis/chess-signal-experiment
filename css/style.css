@@ -276,3 +276,109 @@ body.experiment {
   pointer-events: none;
   z-index: 5;
 }
+
+/* ===== Click-to-move highlights ===== */
+
+.sq-selected {
+  box-shadow: inset 0 0 0 4px rgba(255, 200, 0, 0.85);
+}
+
+[data-square].sq-target {
+  position: relative;
+}
+[data-square].sq-target::after {
+  content: '';
+  position: absolute;
+  top: 35%;
+  left: 35%;
+  width: 30%;
+  height: 30%;
+  border-radius: 50%;
+  background: rgba(50, 50, 50, 0.35);
+  pointer-events: none;
+}
+/* When the target square has an enemy piece, show a ring instead of a dot. */
+[data-square].sq-target:has(img)::after {
+  top: 5%;
+  left: 5%;
+  width: 90%;
+  height: 90%;
+  background: transparent;
+  border: 4px solid rgba(50, 50, 50, 0.35);
+}
+
+/* ===== Promotion modal ===== */
+
+.promotion-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.promotion-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+}
+
+.promotion-chooser {
+  position: relative;
+  background: #fff;
+  border-radius: 12px;
+  padding: 1.5rem 1.8rem 1.2rem;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.25);
+  text-align: center;
+  min-width: 320px;
+}
+
+.promo-title {
+  font-weight: 600;
+  font-size: 1rem;
+  margin-bottom: 1rem;
+  color: #222;
+}
+
+.promo-buttons {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.6rem;
+}
+
+.promo-btn {
+  background: #f3f3f5;
+  border: 1px solid #d8d8de;
+  border-radius: 8px;
+  padding: 0.8rem 0.4rem 0.6rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #333;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+  transition: background 120ms, border-color 120ms, transform 80ms;
+}
+.promo-btn:hover {
+  background: #e7ecff;
+  border-color: #97b3ff;
+}
+.promo-btn:active {
+  transform: scale(0.96);
+}
+
+.promo-piece {
+  font-size: 2rem;
+  line-height: 1;
+  display: block;
+}
+
+.promo-hint {
+  margin-top: 0.9rem;
+  font-size: 0.78rem;
+  color: #888;
+}
