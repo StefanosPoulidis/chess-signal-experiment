@@ -8,7 +8,7 @@ window.PUZZLES = [
     id: 1,
     playerColor: 'white',
     perfectPlay:  5.8,
-    startFen: 'r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4',
+    startFen: '5r1k/3q1p1p/pb2pP2/1p3n2/1Pr1BPQ1/P2p2PK/1BnP3P/1R5R w - - 0 1',
   },
   {
     id: 2,

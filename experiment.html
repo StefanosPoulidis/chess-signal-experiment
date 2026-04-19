@@ -52,13 +52,30 @@
       </div>
     </div>
 
+    <div id="survey-ui" class="hidden">
+      <h1>Almost done — a few questions</h1>
+      <p class="survey-intro">Please answer briefly before you finish.</p>
+      <form id="survey-form">
+        <label class="survey-field">
+          <span>Question 1 (TBD — replace with real question later)</span>
+          <input type="text" name="q1" autocomplete="off">
+        </label>
+        <label class="survey-field">
+          <span>Question 2 (TBD)</span>
+          <input type="text" name="q2" autocomplete="off">
+        </label>
+        <label class="survey-field">
+          <span>Question 3 (TBD)</span>
+          <textarea name="q3" rows="3"></textarea>
+        </label>
+        <button type="submit" id="survey-submit">Submit</button>
+        <p id="survey-status" class="status" aria-live="polite"></p>
+      </form>
+    </div>
+
     <div id="finished-ui" class="hidden">
-      <h1>All 6 puzzles complete</h1>
-      <p>Please download your session data using both buttons below, then notify the experimenter.</p>
-      <div class="download-row">
-        <button id="download-json">Download JSON</button>
-        <button id="download-csv">Download CSV</button>
-      </div>
+      <h1>Thank you for your participation!</h1>
+      <p>We will email you regarding your compensation.</p>
     </div>
   </main>
 
@@ -68,9 +85,11 @@
   <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
 
   <!-- App -->
+  <script src="js/config.js"></script>
   <script src="js/puzzles.js"></script>
   <script src="js/engine.js"></script>
   <script src="js/storage.js"></script>
+  <script src="js/sync.js"></script>
   <script src="js/board.js"></script>
   <script src="js/game.js"></script>
   <script>
@@ -80,8 +99,12 @@
         console.error(err);
       });
       document.getElementById('next-button').addEventListener('click', Game.advance);
-      document.getElementById('download-json').addEventListener('click', Store.downloadJson);
-      document.getElementById('download-csv').addEventListener('click', Store.downloadCsv);
+      document.getElementById('survey-form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const fd = new FormData(e.target);
+        const answers = Object.fromEntries(fd.entries());
+        Game.submitSurvey(answers);
+      });
       window.addEventListener('resize', () => Board.resize());
     });
   </script>

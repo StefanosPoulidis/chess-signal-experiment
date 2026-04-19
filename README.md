@@ -35,6 +35,45 @@ python3 -m http.server 8000
 # open http://localhost:8000
 ```
 
+## Data storage (Google Sheets via Apps Script)
+
+Per-puzzle moves and the final session + survey row are POSTed to a Google
+Apps Script Web App that appends to a Google Sheet you own.
+
+**One-time setup:**
+
+1. Create a new Google Sheet. Add two tabs named exactly `moves` and `sessions`.
+2. In that Sheet: `Extensions → Apps Script`. Paste this code and save:
+
+   ```javascript
+   const SECRET = 'CHANGE-ME-to-a-random-string';
+
+   function doPost(e) {
+     try {
+       const data = JSON.parse(e.postData.contents);
+       if (data.secret !== SECRET) return out({ ok: false, error: 'bad secret' });
+       const ss = SpreadsheetApp.getActiveSpreadsheet();
+       const sheet = ss.getSheetByName(data.tab);
+       if (!sheet) return out({ ok: false, error: 'no tab ' + data.tab });
+       if (sheet.getLastRow() === 0 && data.headers) sheet.appendRow(data.headers);
+       for (const row of (data.rows || [])) sheet.appendRow(row);
+       return out({ ok: true, appended: (data.rows || []).length });
+     } catch (err) {
+       return out({ ok: false, error: String(err) });
+     }
+   }
+   function out(obj) {
+     return ContentService.createTextOutput(JSON.stringify(obj))
+       .setMimeType(ContentService.MimeType.JSON);
+   }
+   ```
+
+3. Change `SECRET` to any random string.
+4. `Deploy → New deployment → Type: Web app`, Execute as **Me**, Who has access
+   **Anyone**. Authorize the prompts. Copy the Web app URL.
+5. Edit `js/config.js` in this repo: paste the URL into `webAppUrl` and the
+   secret string into `secret`. Commit + push.
+
 ## Username DB
 
 Run `python3 scripts/generate_usernames.py` to regenerate 200 usernames

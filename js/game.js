@@ -46,8 +46,9 @@ window.Game = (() => {
 
   function cacheEls() {
     ['status', 'puzzle-indicator', 'condition-badge', 'banner', 'timer',
-     'move-counter', 'clock-history', 'next-button', 'download-json',
-     'download-csv', 'finished-ui', 'experiment-ui', 'promotion-modal']
+     'move-counter', 'clock-history', 'next-button',
+     'survey-ui', 'survey-form', 'survey-submit', 'survey-status',
+     'finished-ui', 'experiment-ui', 'promotion-modal']
       .forEach(id => { els[id] = document.getElementById(id); });
   }
 
@@ -469,6 +470,14 @@ window.Game = (() => {
       s.currentIdx += 1;
     });
     session = Store.load();
+
+    // Push this puzzle's moves to Google Sheets (fire-and-forget).
+    Sync.pushMoves(session, puzzleRecord).then(result => {
+      if (!result.ok && !result.skipped) {
+        console.warn('[Sync] puzzle not saved remotely', result);
+      }
+    });
+
     setStatus('Puzzle complete.');
     els['next-button'].classList.remove('hidden');
   }
@@ -480,12 +489,36 @@ window.Game = (() => {
     loadNextPuzzle().finally(() => { advancing = false; });
   }
 
+  let puzzlesCompletedAt = null;
+
   function finishSession() {
     stopTimer();
     acceptingInput = false;
+    puzzlesCompletedAt = Date.now();
+    Store.update(s => { s.puzzlesCompletedAt = puzzlesCompletedAt; });
     els['experiment-ui'].classList.add('hidden');
+    els['survey-ui'].classList.remove('hidden');
+  }
+
+  async function submitSurvey(answers) {
+    if (els['survey-submit']) els['survey-submit'].disabled = true;
+    if (els['survey-status']) {
+      els['survey-status'].className = 'status';
+      els['survey-status'].textContent = 'Submitting…';
+    }
+    const state = Store.load();
+    const result = await Sync.pushSession(state, answers, state.puzzlesCompletedAt || puzzlesCompletedAt);
+    if (!result.ok && !result.skipped) {
+      // Leave participant on the survey with an error so they can retry.
+      if (els['survey-submit']) els['survey-submit'].disabled = false;
+      if (els['survey-status']) {
+        els['survey-status'].className = 'status error';
+        els['survey-status'].textContent = 'Submission failed — please try again or notify the experimenter.';
+      }
+      return;
+    }
+    els['survey-ui'].classList.add('hidden');
     els['finished-ui'].classList.remove('hidden');
-    setStatus('All puzzles complete. Please download your session data.');
   }
 
   // ---------- utils ----------
@@ -499,5 +532,5 @@ window.Game = (() => {
     return a;
   }
 
-  return { start, advance };
+  return { start, advance, submitSurvey };
 })();
