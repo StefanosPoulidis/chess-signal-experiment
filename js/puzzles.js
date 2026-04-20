@@ -12,9 +12,9 @@ window.PUZZLES = [
   },
   {
     id: 2,
-    playerColor: 'black',
-    perfectPlay: -2.9,
-    startFen: 'r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 5 4',
+    playerColor: 'white',
+    perfectPlay: 4.1,
+    startFen: '6k1/2R2r1p/p3pRpQ/1p6/1P6/P5P1/3r2KP/3q4 w - - 0 1',
   },
   {
     id: 3,
