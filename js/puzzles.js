@@ -19,7 +19,7 @@ window.PUZZLES = [
   {
     id: 3,
     playerColor: 'white',
-    perfectPlay: -6.0,
+    perfectPlay: 6.0,
     startFen: 'r2qkbnr/1b1ppppp/p1n5/1p6/4P3/1B1P1N2/PB1N1PPP/R2QK2R w - - 0 1',
   },
   {
