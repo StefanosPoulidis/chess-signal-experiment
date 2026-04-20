@@ -486,6 +486,28 @@ window.Game = (() => {
       }
     });
 
+    // If the puzzle ended via game-over (checkmate / stalemate / draw),
+    // show a brief reason and auto-advance to the next puzzle.
+    if (chess.game_over && chess.game_over()) {
+      const playerLetter = puzzle.playerColor === 'white' ? 'w' : 'b';
+      let msg;
+      if (chess.in_checkmate && chess.in_checkmate()) {
+        msg = chess.turn() === playerLetter
+          ? 'Checkmate — you lost this one.'
+          : 'Checkmate — you won!';
+      } else if (chess.in_stalemate && chess.in_stalemate()) {
+        msg = 'Stalemate.';
+      } else if (chess.in_draw && chess.in_draw()) {
+        msg = 'Draw.';
+      } else {
+        msg = 'Puzzle ended.';
+      }
+      setStatus(msg + ' Moving to the next puzzle…');
+      await sleep(1500);
+      advance();
+      return;
+    }
+
     setStatus('Puzzle complete.');
     els['next-button'].classList.remove('hidden');
   }
