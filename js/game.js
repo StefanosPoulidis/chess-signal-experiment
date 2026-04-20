@@ -398,8 +398,14 @@ window.Game = (() => {
     moveTimesThisPuzzle.push(timeMs / 1000);
     renderClockHistory();
 
-    setStatus('Analyzing your move…');
-    const after = await Engine.analyze(fenAfterPlayer);
+    const willContinue = (moveIdx + 1) < window.MOVES_PER_PUZZLE;
+    // Let Stockfish think DURING the visible pause. Total wait = max(analysis, 1s),
+    // not analysis + 1s. On the final move (no opponent reply) we skip the pause.
+    setStatus(willContinue ? 'Opponent is thinking…' : 'Analyzing final move…');
+    const [after] = await Promise.all([
+      Engine.analyze(fenAfterPlayer),
+      willContinue ? sleep(1000) : Promise.resolve(),
+    ]);
 
     const record = {
       moveNumber: moveIdx + 1,
@@ -420,11 +426,7 @@ window.Game = (() => {
       evalAfterStockfishMate: null,
     };
 
-    const willContinue = (moveIdx + 1) < window.MOVES_PER_PUZZLE;
     if (willContinue && !chess.game_over()) {
-      setStatus('Opponent is thinking…');
-      await sleep(1000);
-
       const sfBest = after.bestMoveUci;
       if (isValidUci(sfBest)) {
         const mvObj = chess.move({

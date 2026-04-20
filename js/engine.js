@@ -7,7 +7,8 @@
 
 window.Engine = (() => {
   const STOCKFISH_URL = 'https://cdn.jsdelivr.net/npm/stockfish.js@10.0.2/stockfish.js';
-  const DEFAULT_DEPTH = 15;
+  const DEFAULT_DEPTH = 20;           // deeper search → stronger, more consistent play
+  const ELO_TARGET = 2800;            // GM-level opponent
 
   let worker = null;
   let listeners = [];
@@ -56,6 +57,10 @@ window.Engine = (() => {
       waitFor(l => l.startsWith('uciok') ? true : false),
       10000, 'uciok'
     );
+    // Target roughly GM-level strength. UCI_LimitStrength caps the engine
+    // to the UCI_Elo value (Stockfish 10 supports up to ~2850).
+    send('setoption name UCI_LimitStrength value true');
+    send('setoption name UCI_Elo value ' + ELO_TARGET);
     send('isready');
     await withTimeout(
       waitFor(l => l.startsWith('readyok') ? true : false),
