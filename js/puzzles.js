@@ -25,7 +25,7 @@ window.PUZZLES = [
     playerColor: 'white',
     perfectPlay: 6.0,
     bestMove: null,  // TODO
-    startFen: 'r2qkbnr/1b1ppppp/p1n5/1p6/4P3/1B1P1N2/PB1N1PPP/R2QK2R w - - 0 1',
+    startFen: 'r2qkbnr/1b1ppppp/p1n5/1p6/4P3/1B1P1N2/PB1N1PPP/R2QK2R w KQkq - 0 1',
   },
   {
     id: 4,
