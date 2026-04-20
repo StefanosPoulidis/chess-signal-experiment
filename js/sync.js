@@ -24,7 +24,6 @@ window.Sync = (() => {
     'username', 'condition',
     'started_at', 'puzzles_completed_at', 'survey_submitted_at',
     'puzzle_order_played',
-    'user_agent',
   ];
 
   function cfg() { return window.CONFIG || {}; }
@@ -92,7 +91,6 @@ window.Sync = (() => {
       puzzlesCompletedAt ? new Date(puzzlesCompletedAt).toISOString() : '',
       new Date().toISOString(),
       (state.puzzleOrder || []).join('-'),
-      (navigator && navigator.userAgent) || '',
       ...surveyKeys.map(k => surveyAnswers[k] ?? ''),
     ];
     return post({ tab: 'sessions', headers, rows: [row] });
