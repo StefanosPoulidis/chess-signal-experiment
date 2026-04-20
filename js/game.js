@@ -135,14 +135,19 @@ window.Game = (() => {
     evalBeforeMoveCp = startAnalysis.cp;
     evalBeforeMoveMate = startAnalysis.mate;
 
-    // Convert bestMoveUci to SAN (defensive: engine may return "(none)" or invalid UCI)
+    // Prefer the hardcoded puzzle.bestMove for the `act` signal; fall back to
+    // Stockfish's live best move if the puzzle doesn't specify one.
+    const displayedBestUci = (puzzle.bestMove && isValidUci(puzzle.bestMove))
+      ? puzzle.bestMove
+      : startAnalysis.bestMoveUci;
+
     let bestMoveSan = null;
-    if (isValidUci(startAnalysis.bestMoveUci)) {
+    if (isValidUci(displayedBestUci)) {
       const testChess = new Chess(puzzle.startFen);
       const moveObj = testChess.move({
-        from: startAnalysis.bestMoveUci.slice(0, 2),
-        to: startAnalysis.bestMoveUci.slice(2, 4),
-        promotion: startAnalysis.bestMoveUci.length === 5 ? startAnalysis.bestMoveUci[4] : undefined,
+        from: displayedBestUci.slice(0, 2),
+        to: displayedBestUci.slice(2, 4),
+        promotion: displayedBestUci.length === 5 ? displayedBestUci[4] : undefined,
       });
       bestMoveSan = moveObj ? moveObj.san : null;
     }
@@ -155,11 +160,12 @@ window.Game = (() => {
       startEvalCp: startAnalysis.cp,
       startEvalMate: startAnalysis.mate,
       startBestMoveSan: bestMoveSan,
-      startBestMoveUci: startAnalysis.bestMoveUci,
+      startBestMoveUci: displayedBestUci,
+      startStockfishBestMoveUci: startAnalysis.bestMoveUci,
       moves: [],
     };
 
-    showSignal(startAnalysis.bestMoveUci, bestMoveSan);
+    showSignal(displayedBestUci, bestMoveSan);
     setStatus('Your move.');
     updateMoveCounter();
     acceptingInput = true;
