@@ -405,13 +405,21 @@ window.Game = (() => {
     renderClockHistory();
 
     const willContinue = (moveIdx + 1) < window.MOVES_PER_PUZZLE;
-    // Let Stockfish think DURING the visible pause. Total wait = max(analysis, 1s),
-    // not analysis + 1s. On the final move (no opponent reply) we skip the pause.
-    setStatus(willContinue ? 'Opponent is thinking…' : 'Analyzing final move…');
-    const [after] = await Promise.all([
-      Engine.analyze(fenAfterPlayer),
-      willContinue ? sleep(1000) : Promise.resolve(),
-    ]);
+    const playerMoveEndedGame = chess.game_over();
+
+    // Let Stockfish think DURING the visible pause. Total wait = max(analysis, 1s).
+    // If the player's move ended the game (e.g., delivered mate), skip analysis —
+    // asking Stockfish about a terminal position can hang the worker.
+    setStatus(willContinue && !playerMoveEndedGame ? 'Opponent is thinking…' : 'Analyzing your move…');
+    let after;
+    if (playerMoveEndedGame) {
+      after = { cp: null, mate: null, bestMoveUci: null };
+    } else {
+      [after] = await Promise.all([
+        Engine.analyze(fenAfterPlayer),
+        willContinue ? sleep(1000) : Promise.resolve(),
+      ]);
+    }
 
     const record = {
       moveNumber: moveIdx + 1,
@@ -444,11 +452,18 @@ window.Game = (() => {
           record.stockfishReply = { san: mvObj.san, uci: sfBest };
           record.fenAfterStockfish = chess.fen();
           Board.setPosition(chess.fen());
-          const afterSf = await Engine.analyze(chess.fen());
-          record.evalAfterStockfishCp = afterSf.cp;
-          record.evalAfterStockfishMate = afterSf.mate;
-          evalBeforeMoveCp = afterSf.cp;
-          evalBeforeMoveMate = afterSf.mate;
+          // Skip analysis if Stockfish's reply ended the game (mate / draw) —
+          // analyzing a terminal position can hang the worker.
+          if (!chess.game_over()) {
+            const afterSf = await Engine.analyze(chess.fen());
+            record.evalAfterStockfishCp = afterSf.cp;
+            record.evalAfterStockfishMate = afterSf.mate;
+            evalBeforeMoveCp = afterSf.cp;
+            evalBeforeMoveMate = afterSf.mate;
+          } else {
+            evalBeforeMoveCp = null;
+            evalBeforeMoveMate = null;
+          }
         }
       }
     }

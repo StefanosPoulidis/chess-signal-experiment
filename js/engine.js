@@ -78,8 +78,9 @@ window.Engine = (() => {
     send(`position fen ${fen}`);
 
     const infoLines = [];
-    const bestMoveLine = await new Promise(resolve => {
-      listeners.push({
+    let listenerRef;
+    const analysisPromise = new Promise(resolve => {
+      listenerRef = {
         matcher: (line) => {
           if (line.startsWith('info ') && /score (cp|mate) /.test(line)) {
             infoLines.push(line);
@@ -88,9 +89,26 @@ window.Engine = (() => {
           return false;
         },
         resolve,
-      });
+      };
+      listeners.push(listenerRef);
       // Search stops at whichever arrives first: `depth` plies or `movetime` ms.
       send(`go depth ${depth} movetime ${MAX_SEARCH_MS}`);
+    });
+
+    // Hard ceiling: if Stockfish doesn't return within MAX_SEARCH_MS + 3s,
+    // give up, detach the listener, and return a null result. Prevents a
+    // stuck worker from freezing the whole platform.
+    const bestMoveLine = await Promise.race([
+      analysisPromise,
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('analyze timeout')), MAX_SEARCH_MS + 3000)
+      ),
+    ]).catch(err => {
+      console.warn('[Engine] analyze timed out — detaching listener', err);
+      const idx = listeners.indexOf(listenerRef);
+      if (idx >= 0) listeners.splice(idx, 1);
+      send('stop');
+      return 'bestmove (none)';
     });
 
     const bestMoveUci = bestMoveLine.split(' ')[1];
