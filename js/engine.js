@@ -7,7 +7,8 @@
 
 window.Engine = (() => {
   const STOCKFISH_URL = 'https://cdn.jsdelivr.net/npm/stockfish.js@10.0.2/stockfish.js';
-  const DEFAULT_DEPTH = 22;           // full-strength, deterministic search
+  const DEFAULT_DEPTH = 18;           // upper bound on search depth
+  const MAX_SEARCH_MS = 1000;         // hard cap: stop the search after 1s regardless of depth
 
   let worker = null;
   let listeners = [];
@@ -88,7 +89,8 @@ window.Engine = (() => {
         },
         resolve,
       });
-      send(`go depth ${depth}`);
+      // Search stops at whichever arrives first: `depth` plies or `movetime` ms.
+      send(`go depth ${depth} movetime ${MAX_SEARCH_MS}`);
     });
 
     const bestMoveUci = bestMoveLine.split(' ')[1];
