@@ -38,7 +38,7 @@ window.PUZZLES = [
     id: 6,
     playerColor: 'black',
     perfectPlay: -5.0,
-    startFen: 'r1bqk2r/pppp1ppp/2n2n2/2b5/2BPp3/2N2N2/PPP2PPP/R1BQK2R b KQkq - 0 6',
+    startFen: '5rk1/2R2r1p/p1P3pB/1p1Q1b2/8/6P1/PP2q2P/5RK1 b - - 0 1',
   },
 ];
 
