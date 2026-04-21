@@ -232,6 +232,7 @@ window.Game = (() => {
     if (!acceptingInput) return 'snapback';
     if (source === target || target === 'offboard') return 'snapback';
     const accepted = attemptMove(source, target, piece);
+    if (accepted === 'promotion') return 'snapback';  // snap back while modal is open
     return accepted ? undefined : 'snapback';
   }
 
@@ -298,7 +299,11 @@ window.Game = (() => {
       }
       acceptingInput = false;
       openPromotionModal(source, target);
-      return true;
+      // Special sentinel: handleDrop returns 'snapback' so the drag-visual
+      // reverts while the modal is open. If the user picks, completePromotion
+      // applies the move and Board.setPosition syncs; if they cancel, the
+      // pawn is already visually back on its origin square.
+      return 'promotion';
     }
 
     const timeMs = Math.round(performance.now() - moveStartTs);

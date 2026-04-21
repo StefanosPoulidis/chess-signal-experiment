@@ -103,11 +103,20 @@ window.Engine = (() => {
       new Promise((_, reject) =>
         setTimeout(() => reject(new Error('analyze timeout')), MAX_SEARCH_MS + 3000)
       ),
-    ]).catch(err => {
+    ]).catch(async err => {
       console.warn('[Engine] analyze timed out — detaching listener', err);
       const idx = listeners.indexOf(listenerRef);
       if (idx >= 0) listeners.splice(idx, 1);
       send('stop');
+      // `stop` triggers Stockfish to emit the current search's bestmove.
+      // Swallow it here so it can't leak into the NEXT analyze call's
+      // listener. Bounded at 2s in case the engine is wedged.
+      try {
+        await withTimeout(
+          waitFor(l => l.startsWith('bestmove ') ? true : false),
+          2000, 'drain bestmove'
+        );
+      } catch { /* ignore */ }
       return 'bestmove (none)';
     });
 
