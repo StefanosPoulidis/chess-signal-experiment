@@ -29,10 +29,10 @@ window.PUZZLES = [
   },
   {
     id: 4,
-    playerColor: 'white',
-    perfectPlay:  1.0,
-    bestMove: null,  // TODO
-    startFen: 'r1bqk2r/pppp1ppp/2n2n2/2b1p3/2B1P3/2N2N2/PPPP1PPP/R1BQK2R w KQkq - 7 5',
+    playerColor: 'black',
+    perfectPlay: -8.07,
+    bestMove: 'c4h4',   // Rxh4
+    startFen: '8/2R5/3Prbpk/1p3p1p/p1r4P/B1p1PqP1/2RP1P2/1Q4K1 b - - 2 4',
   },
   {
     id: 5,
