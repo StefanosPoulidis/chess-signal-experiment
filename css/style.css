@@ -323,10 +323,10 @@ body.experiment {
   box-shadow: inset 0 0 0 4px rgba(255, 200, 0, 0.85);
 }
 
-[data-square].sq-target {
+.sq-target {
   position: relative;
 }
-[data-square].sq-target::after {
+.sq-target::after {
   content: '';
   position: absolute;
   top: 35%;
@@ -338,7 +338,7 @@ body.experiment {
   pointer-events: none;
 }
 /* When the target square has an enemy piece, show a ring instead of a dot. */
-[data-square].sq-target:has(img)::after {
+.sq-target:has(img)::after {
   top: 5%;
   left: 5%;
   width: 90%;

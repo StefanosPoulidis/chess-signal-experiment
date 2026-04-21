@@ -25,7 +25,23 @@ window.Board = (() => {
     return board;
   }
 
-  // Click-to-move support. Handler is called with the clicked square ('e4').
+  // Click-to-move support. chessboard.js v1 marks squares with a class like
+  // "square-e4" (no data-square attribute), so we scan up the DOM for that
+  // class pattern.
+  function extractSquareFromElement(el, limit) {
+    while (el && el !== limit) {
+      if (el.classList) {
+        for (const cls of el.classList) {
+          if (/^square-[a-h][1-8]$/.test(cls)) {
+            return cls.slice(7);
+          }
+        }
+      }
+      el = el.parentElement;
+    }
+    return null;
+  }
+
   function setupClickHandler(handler) {
     if (!containerEl) return;
     const wrapper = containerEl.querySelector('[class^="board-"]') || containerEl;
@@ -33,9 +49,7 @@ window.Board = (() => {
       wrapper.removeEventListener('click', wrapper._clickHandler);
     }
     const fn = (e) => {
-      const sq = e.target.closest('[data-square]');
-      if (!sq) return;
-      const square = sq.getAttribute('data-square');
+      const square = extractSquareFromElement(e.target, wrapper);
       if (square) handler(square);
     };
     wrapper.addEventListener('click', fn);
@@ -46,7 +60,7 @@ window.Board = (() => {
     if (!containerEl) return;
     const wrapper = containerEl.querySelector('[class^="board-"]');
     if (!wrapper) return;
-    const sq = wrapper.querySelector(`[data-square="${square}"]`);
+    const sq = wrapper.querySelector('.square-' + square);
     if (sq) sq.classList.add(className);
   }
 
