@@ -69,21 +69,28 @@ window.Board = (() => {
 
     const onDown = (e) => {
       const p = pointFrom(e);
-      downSquare = extractSquareFromElement(targetFrom(e), wrapper);
+      const t = targetFrom(e);
+      downSquare = extractSquareFromElement(t, wrapper);
       downX = p.x;
       downY = p.y;
+      console.log('[click] down', { square: downSquare, target: t && t.tagName, classes: t && t.className });
     };
 
     const onUp = (e) => {
-      if (downSquare === null) return;
       const p = pointFrom(e);
+      const t = targetFrom(e);
+      const upSquare = extractSquareFromElement(t, wrapper);
+      console.log('[click] up', { upSquare, downSquare, target: t && t.tagName, classes: t && t.className });
+      if (downSquare === null) return;
       const moved = Math.abs(p.x - downX) > DRAG_THRESHOLD_PX
                  || Math.abs(p.y - downY) > DRAG_THRESHOLD_PX;
-      const upSquare = extractSquareFromElement(targetFrom(e), wrapper);
       const saved = downSquare;
       downSquare = null;
       if (!moved && upSquare && upSquare === saved) {
-        handler(upSquare);
+        console.log('[click] -> handler', saved);
+        handler(saved);
+      } else {
+        console.log('[click] ignored', { moved, upSquare, saved });
       }
     };
 
