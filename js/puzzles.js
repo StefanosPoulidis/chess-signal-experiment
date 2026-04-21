@@ -37,9 +37,9 @@ window.PUZZLES = [
   {
     id: 5,
     playerColor: 'white',
-    perfectPlay: 10.0,
-    bestMove: null,  // TODO
-    startFen: '1r6/1r5k/3p2Rp/q1pPbb1P/5p2/P1N2P2/1PP3Q1/2K1B1R1 w - - 0 1',
+    perfectPlay: 6.16,
+    bestMove: 'g6h6',   // Rxh6+
+    startFen: '1r6/1r5k/3p2Rp/q1pPbb1P/p4p2/P1N2P2/1PP3Q1/2K1B1R1 w - - 0 1',
   },
   {
     id: 6,
