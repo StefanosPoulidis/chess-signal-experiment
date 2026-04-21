@@ -10,9 +10,11 @@ window.Board = (() => {
   let board = null;
   let svgOverlay = null;
   let containerEl = null;
+  let currentOrientation = 'white';
 
   function create({ elementId, fen, playerColor, onDrop, onDragStart }) {
     containerEl = document.getElementById(elementId);
+    currentOrientation = playerColor;
     board = Chessboard(elementId, {
       position: fen,
       draggable: true,
@@ -42,15 +44,38 @@ window.Board = (() => {
     return null;
   }
 
+  // Compute the algebraic square under a client-coordinate point using the
+  // board's bounding rect + orientation. Reliable even when chessboard.js's
+  // drag ghost is covering the square (elementFromPoint would hit the ghost).
+  function squareFromPoint(clientX, clientY) {
+    if (!containerEl) return null;
+    const boardEl = containerEl.querySelector('[class^="board-"]');
+    if (!boardEl) return null;
+    const rect = boardEl.getBoundingClientRect();
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+    if (x < 0 || y < 0 || x >= rect.width || y >= rect.height) return null;
+    const sq = rect.width / 8;
+    const fileIdx = Math.floor(x / sq);
+    const rankIdxFromTop = Math.floor(y / sq);
+    const file = currentOrientation === 'white'
+      ? String.fromCharCode(97 + fileIdx)         // a..h
+      : String.fromCharCode(97 + (7 - fileIdx));  // h..a
+    const rank = currentOrientation === 'white'
+      ? (8 - rankIdxFromTop)                      // 8..1
+      : (rankIdxFromTop + 1);                     // 1..8
+    return file + rank;
+  }
+
   function setupClickHandler(handler) {
     if (!containerEl) return;
     const wrapper = containerEl.querySelector('[class^="board-"]') || containerEl;
-    // Clean up any previous handlers (board was destroyed + recreated).
     if (wrapper._clickCleanup) wrapper._clickCleanup();
 
-    // Chessboard.js v1 consumes plain 'click' on pieces (its drag logic
-    // prevents default on mousedown). So we detect taps manually: mousedown
-    // + mouseup on the same square without noticeable pointer movement.
+    // chessboard.js v1 creates a floating drag-ghost on piece mousedown and
+    // that ghost intercepts the subsequent mouseup via normal bubbling. We
+    // listen for mouseup on document (always fires) and map the release
+    // coordinates to a square via squareFromPoint.
     let downSquare = null;
     let downX = 0;
     let downY = 0;
@@ -61,49 +86,38 @@ window.Board = (() => {
       return { x: t.clientX, y: t.clientY };
     }
 
-    function targetFrom(e) {
-      if (e.target) return e.target;
-      const p = pointFrom(e);
-      return document.elementFromPoint(p.x, p.y);
-    }
-
     const onDown = (e) => {
       const p = pointFrom(e);
-      const t = targetFrom(e);
-      downSquare = extractSquareFromElement(t, wrapper);
+      downSquare = squareFromPoint(p.x, p.y);
       downX = p.x;
       downY = p.y;
-      console.log('[click] down', { square: downSquare, target: t && t.tagName, classes: t && t.className });
     };
 
     const onUp = (e) => {
-      const p = pointFrom(e);
-      const t = targetFrom(e);
-      const upSquare = extractSquareFromElement(t, wrapper);
-      console.log('[click] up', { upSquare, downSquare, target: t && t.tagName, classes: t && t.className });
       if (downSquare === null) return;
+      const p = pointFrom(e);
       const moved = Math.abs(p.x - downX) > DRAG_THRESHOLD_PX
                  || Math.abs(p.y - downY) > DRAG_THRESHOLD_PX;
+      const upSquare = squareFromPoint(p.x, p.y);
       const saved = downSquare;
       downSquare = null;
       if (!moved && upSquare && upSquare === saved) {
-        console.log('[click] -> handler', saved);
-        handler(saved);
-      } else {
-        console.log('[click] ignored', { moved, upSquare, saved });
+        handler(upSquare);
       }
     };
 
     wrapper.addEventListener('mousedown', onDown);
-    wrapper.addEventListener('mouseup', onUp);
     wrapper.addEventListener('touchstart', onDown, { passive: true });
-    wrapper.addEventListener('touchend', onUp);
+    // UP on document so the drag-ghost (which intercepts wrapper mouseup)
+    // doesn't eat the event.
+    document.addEventListener('mouseup', onUp);
+    document.addEventListener('touchend', onUp);
 
     wrapper._clickCleanup = () => {
       wrapper.removeEventListener('mousedown', onDown);
-      wrapper.removeEventListener('mouseup', onUp);
       wrapper.removeEventListener('touchstart', onDown);
-      wrapper.removeEventListener('touchend', onUp);
+      document.removeEventListener('mouseup', onUp);
+      document.removeEventListener('touchend', onUp);
       wrapper._clickCleanup = null;
     };
   }
