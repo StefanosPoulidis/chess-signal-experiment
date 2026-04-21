@@ -45,15 +45,60 @@ window.Board = (() => {
   function setupClickHandler(handler) {
     if (!containerEl) return;
     const wrapper = containerEl.querySelector('[class^="board-"]') || containerEl;
-    if (wrapper._clickHandler) {
-      wrapper.removeEventListener('click', wrapper._clickHandler);
+    // Clean up any previous handlers (board was destroyed + recreated).
+    if (wrapper._clickCleanup) wrapper._clickCleanup();
+
+    // Chessboard.js v1 consumes plain 'click' on pieces (its drag logic
+    // prevents default on mousedown). So we detect taps manually: mousedown
+    // + mouseup on the same square without noticeable pointer movement.
+    let downSquare = null;
+    let downX = 0;
+    let downY = 0;
+    const DRAG_THRESHOLD_PX = 5;
+
+    function pointFrom(e) {
+      const t = (e.touches && e.touches[0]) || (e.changedTouches && e.changedTouches[0]) || e;
+      return { x: t.clientX, y: t.clientY };
     }
-    const fn = (e) => {
-      const square = extractSquareFromElement(e.target, wrapper);
-      if (square) handler(square);
+
+    function targetFrom(e) {
+      if (e.target) return e.target;
+      const p = pointFrom(e);
+      return document.elementFromPoint(p.x, p.y);
+    }
+
+    const onDown = (e) => {
+      const p = pointFrom(e);
+      downSquare = extractSquareFromElement(targetFrom(e), wrapper);
+      downX = p.x;
+      downY = p.y;
     };
-    wrapper.addEventListener('click', fn);
-    wrapper._clickHandler = fn;
+
+    const onUp = (e) => {
+      if (downSquare === null) return;
+      const p = pointFrom(e);
+      const moved = Math.abs(p.x - downX) > DRAG_THRESHOLD_PX
+                 || Math.abs(p.y - downY) > DRAG_THRESHOLD_PX;
+      const upSquare = extractSquareFromElement(targetFrom(e), wrapper);
+      const saved = downSquare;
+      downSquare = null;
+      if (!moved && upSquare && upSquare === saved) {
+        handler(upSquare);
+      }
+    };
+
+    wrapper.addEventListener('mousedown', onDown);
+    wrapper.addEventListener('mouseup', onUp);
+    wrapper.addEventListener('touchstart', onDown, { passive: true });
+    wrapper.addEventListener('touchend', onUp);
+
+    wrapper._clickCleanup = () => {
+      wrapper.removeEventListener('mousedown', onDown);
+      wrapper.removeEventListener('mouseup', onUp);
+      wrapper.removeEventListener('touchstart', onDown);
+      wrapper.removeEventListener('touchend', onUp);
+      wrapper._clickCleanup = null;
+    };
   }
 
   function highlight(square, className) {
