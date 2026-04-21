@@ -7,8 +7,8 @@
 
 window.Engine = (() => {
   const STOCKFISH_URL = 'https://cdn.jsdelivr.net/npm/stockfish.js@10.0.2/stockfish.js';
-  const DEFAULT_DEPTH = 18;           // upper bound on search depth
-  const MAX_SEARCH_MS = 1200;         // hard cap: stop the search after 1.2s regardless of depth
+  const DEFAULT_DEPTH = 22;           // upper bound on search depth
+  const MAX_SEARCH_MS = 3000;         // hard cap: stop the search after 3s regardless of depth
 
   let worker = null;
   let listeners = [];
