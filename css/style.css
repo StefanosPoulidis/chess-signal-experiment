@@ -99,7 +99,7 @@ body.experiment {
 
 .experiment-wrapper {
   width: 100%;
-  max-width: 560px;
+  max-width: 680px;
   background: #fff;
   border: 1px solid #e5e5e8;
   border-radius: 10px;
@@ -148,65 +148,64 @@ body.experiment {
 
 .chess-clock {
   background: #1a1a1a;
-  border-radius: 10px;
-  padding: 1rem 1.2rem 0.9rem;
-  margin: 1rem auto 1rem;
+  border-radius: 8px;
+  padding: 0.55rem 0.8rem 0.5rem;
+  margin: 0.8rem auto 0.8rem;
   text-align: center;
-  max-width: 460px;
+  max-width: 360px;
   box-shadow: inset 0 0 0 1px #2a2a2a;
 }
 
 .clock-display {
   font-family: "Menlo", "SF Mono", ui-monospace, monospace;
-  font-size: 2.6rem;
+  font-size: 1.35rem;
   font-weight: 600;
   color: #33ff66;
   line-height: 1;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.02em;
-  text-shadow: 0 0 12px rgba(51, 255, 102, 0.3);
 }
 
 .clock-unit-inline {
-  font-size: 0.55em;
+  font-size: 0.6em;
   margin-left: 0.2em;
   color: #6abc7d;
 }
 
 .clock-label {
-  font-size: 0.7rem;
+  font-size: 0.6rem;
   color: #777;
   text-transform: uppercase;
-  letter-spacing: 0.12em;
-  margin-top: 0.35rem;
+  letter-spacing: 0.1em;
+  margin-top: 0.2rem;
 }
 
 .clock-history {
   display: flex;
   justify-content: center;
   align-items: center;
-  gap: 0.35rem;
+  gap: 0.3rem;
   flex-wrap: wrap;
-  margin-top: 0.75rem;
-  min-height: 1.6em;
+  margin-top: 0.45rem;
+  min-height: 1.3em;
 }
 
 .clock-chip {
   background: #2a2a2a;
   color: #b0e0b0;
-  padding: 0.2rem 0.55rem;
-  border-radius: 4px;
+  padding: 0.12rem 0.45rem;
+  border-radius: 3px;
   font-family: "Menlo", "SF Mono", ui-monospace, monospace;
-  font-size: 0.78rem;
+  font-size: 0.7rem;
   font-variant-numeric: tabular-nums;
   display: inline-flex;
   align-items: baseline;
-  gap: 0.35em;
+  gap: 0.3em;
 }
 
 .clock-chip .chip-label {
   color: #6abc7d;
-  font-size: 0.75em;
+  font-size: 0.72em;
   letter-spacing: 0.05em;
 }
 
