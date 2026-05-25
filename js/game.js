@@ -20,6 +20,64 @@ window.Game = (() => {
   let advancing = false;            // guards double-click on "Next puzzle"
   let selectedSquare = null;        // click-to-move: currently selected origin square
 
+  const LIKERT_OPTIONS = [
+    { value: 'strongly_disagree', label: 'Strongly disagree' },
+    { value: 'disagree', label: 'Disagree' },
+    { value: 'neither', label: 'Neither agree nor disagree' },
+    { value: 'agree', label: 'Agree' },
+    { value: 'strongly_agree', label: 'Strongly agree' },
+  ];
+
+  const YES_NO_OPTIONS = [
+    { value: 'yes', label: 'Yes' },
+    { value: 'no', label: 'No' },
+  ];
+
+  const SURVEY_QUESTIONS = [
+    {
+      name: 'q1',
+      text: 'Before making my first move, I tried to understand the idea of the position and plan what I would do next.',
+      options: LIKERT_OPTIONS,
+    },
+    {
+      name: 'q2',
+      text: 'After making the first move, I often felt lost in the continuation.',
+      options: LIKERT_OPTIONS,
+    },
+    {
+      name: 'q3',
+      text: 'The first move sometimes led to positions that were harder to continue than I expected.',
+      options: LIKERT_OPTIONS,
+    },
+    {
+      name: 'q4',
+      text: 'The one-minute time limit affected my decisions.',
+      options: LIKERT_OPTIONS,
+    },
+    {
+      name: 'q5',
+      text: 'The signal I received was useful for helping me make decisions.',
+      options: LIKERT_OPTIONS,
+    },
+    {
+      name: 'q6',
+      text: 'I completed the chess task without using outside help, such as a chess engine, chess website, book, coach, parent, friend, or any other assistance.',
+      options: YES_NO_OPTIONS,
+    },
+    {
+      name: 'q7',
+      condition: 'act',
+      text: 'When I was shown the recommended move, I followed it even if I did not fully understand why it was good.',
+      options: LIKERT_OPTIONS,
+    },
+    {
+      name: 'q7',
+      condition: 'att',
+      text: 'When I was told there was a uniquely optimal move, I searched more carefully than I otherwise would have.',
+      options: LIKERT_OPTIONS,
+    },
+  ];
+
   // ---------- lifecycle ----------
 
   async function start() {
@@ -47,7 +105,7 @@ window.Game = (() => {
   function cacheEls() {
     ['status', 'puzzle-indicator', 'condition-badge', 'banner', 'timer',
      'move-counter', 'clock-history', 'next-button',
-     'survey-ui', 'survey-form', 'survey-submit', 'survey-status',
+     'survey-ui', 'survey-form', 'survey-fields', 'survey-submit', 'survey-status',
      'finished-ui', 'experiment-ui', 'promotion-modal']
       .forEach(id => { els[id] = document.getElementById(id); });
   }
@@ -546,8 +604,51 @@ window.Game = (() => {
     acceptingInput = false;
     puzzlesCompletedAt = Date.now();
     Store.update(s => { s.puzzlesCompletedAt = puzzlesCompletedAt; });
+    renderSurvey(session.participant.condition);
     els['experiment-ui'].classList.add('hidden');
     els['survey-ui'].classList.remove('hidden');
+  }
+
+  function renderSurvey(condition) {
+    const container = els['survey-fields'];
+    if (!container) return;
+    container.innerHTML = '';
+    const questions = SURVEY_QUESTIONS.filter(q => !q.condition || q.condition === condition);
+
+    questions.forEach((question, idx) => {
+      const fieldset = document.createElement('fieldset');
+      fieldset.className = 'survey-field';
+
+      const legend = document.createElement('legend');
+      legend.className = 'survey-question';
+      legend.textContent = `${idx + 1}. ${question.text}`;
+      fieldset.appendChild(legend);
+
+      const options = document.createElement('div');
+      options.className = 'survey-options';
+      question.options.forEach(option => {
+        const id = `survey-${question.name}-${option.value}`;
+        const label = document.createElement('label');
+        label.className = 'survey-option';
+        label.setAttribute('for', id);
+
+        const input = document.createElement('input');
+        input.type = 'radio';
+        input.id = id;
+        input.name = question.name;
+        input.value = option.value;
+        input.required = true;
+
+        const text = document.createElement('span');
+        text.textContent = option.label;
+
+        label.appendChild(input);
+        label.appendChild(text);
+        options.appendChild(label);
+      });
+      fieldset.appendChild(options);
+      container.appendChild(fieldset);
+    });
   }
 
   async function submitSurvey(answers) {

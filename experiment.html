@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <title>Chess Signal Experiment — Play</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" href="data:,">
   <link rel="stylesheet"
         href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
   <link rel="stylesheet" href="css/style.css">
@@ -54,20 +55,9 @@
 
     <div id="survey-ui" class="hidden">
       <h1>Almost done — a few questions</h1>
-      <p class="survey-intro">Please answer briefly before you finish.</p>
+      <p class="survey-intro">You have completed the chess puzzles! Please answer the short questions below to complete your participation.</p>
       <form id="survey-form">
-        <label class="survey-field">
-          <span>Question 1 (TBD — replace with real question later)</span>
-          <input type="text" name="q1" autocomplete="off">
-        </label>
-        <label class="survey-field">
-          <span>Question 2 (TBD)</span>
-          <input type="text" name="q2" autocomplete="off">
-        </label>
-        <label class="survey-field">
-          <span>Question 3 (TBD)</span>
-          <textarea name="q3" rows="3"></textarea>
-        </label>
+        <div id="survey-fields" class="survey-fields"></div>
         <button type="submit" id="survey-submit">Submit</button>
         <p id="survey-status" class="status" aria-live="polite"></p>
       </form>

@@ -11,6 +11,7 @@ window.Board = (() => {
   let svgOverlay = null;
   let containerEl = null;
   let currentOrientation = 'white';
+  let currentArrow = null;
 
   function create({ elementId, fen, playerColor, onDrop, onDragStart }) {
     containerEl = document.getElementById(elementId);
@@ -161,6 +162,7 @@ window.Board = (() => {
     const wrapper = containerEl.querySelector('[class^="board-"]') || containerEl;
     wrapper.style.position = 'relative';
     wrapper.appendChild(svgOverlay);
+    renderArrow();
   }
 
   function sqCenter(square, orientation) {
@@ -182,9 +184,15 @@ window.Board = (() => {
   }
 
   function drawArrow(from, to, orientation) {
-    clearArrows();
-    const a = sqCenter(from, orientation);
-    const b = sqCenter(to, orientation);
+    currentArrow = { from, to, orientation };
+    renderArrow();
+  }
+
+  function renderArrow() {
+    if (!svgOverlay || !currentArrow) return;
+    clearArrowElements();
+    const a = sqCenter(currentArrow.from, currentArrow.orientation);
+    const b = sqCenter(currentArrow.to, currentArrow.orientation);
     const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
     line.setAttribute('x1', a.x);
     line.setAttribute('y1', a.y);
@@ -198,12 +206,17 @@ window.Board = (() => {
     svgOverlay.appendChild(line);
   }
 
-  function clearArrows() {
+  function clearArrowElements() {
     if (!svgOverlay) return;
     // Keep the <defs>, remove everything else
     [...svgOverlay.children].forEach(ch => {
       if (ch.tagName.toLowerCase() !== 'defs') ch.remove();
     });
+  }
+
+  function clearArrows() {
+    currentArrow = null;
+    clearArrowElements();
   }
 
   function setPosition(fen) {
@@ -218,6 +231,7 @@ window.Board = (() => {
   function destroy() {
     if (board && board.destroy) board.destroy();
     board = null;
+    currentArrow = null;
     if (svgOverlay) { svgOverlay.remove(); svgOverlay = null; }
   }
 
