@@ -76,10 +76,30 @@ Apps Script Web App that appends to a Google Sheet you own.
 
 ## Username DB
 
-Run `python3 scripts/generate_usernames.py` to regenerate 200 usernames
-(100 `att`, 100 `act`). Outputs:
+Run `python3 scripts/generate_usernames.py` to maintain the private username
+pool and regenerate the public hash allowlist. The current target is 160
+recognized usernames per condition, with a private assignment export of 150
+currently usable usernames per condition.
 
 - `js/usernames.js` — SHA-256 hash → condition (committed, public-safe).
-- `private/usernames_cleartext.csv` — cleartext list for offline distribution (gitignored).
+- `private/usernames_cleartext.csv` — all cleartext recognized usernames (gitignored).
+- `private/available_usernames_for_assignment.csv` — exactly 150 assignable
+  usernames per condition, excluding names in `private/used_usernames_snapshot.txt`
+  (gitignored).
+- `private/available_usernames_att.txt` and `private/available_usernames_act.txt`
+  — condition-specific assignment lists (gitignored).
 
-Seeded with a fixed seed, so regeneration is deterministic.
+The script preserves existing private per-condition lists and appends deterministic
+new names, so old assignments do not change.
+
+## Resetting a Username
+
+Do not reset a real participant username unless that session should be excluded.
+To reuse a test username, remove that username's rows from all three response tabs:
+
+- `used_usernames`
+- `sessions`
+- `moves`
+
+Deleting only the `used_usernames` row is not enough, because the live app also
+checks `sessions` before allowing reuse.
