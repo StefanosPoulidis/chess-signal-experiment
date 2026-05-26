@@ -664,7 +664,9 @@ window.Game = (() => {
       if (els['survey-submit']) els['survey-submit'].disabled = false;
       if (els['survey-status']) {
         els['survey-status'].className = 'status error';
-        els['survey-status'].textContent = 'Submission failed — please try again or notify the experimenter.';
+        els['survey-status'].textContent = result.code === 'username_used'
+          ? 'This username has already been used, so this session cannot be submitted again. Please notify the experimenter.'
+          : 'Submission failed — please try again or notify the experimenter.';
       }
       return;
     }

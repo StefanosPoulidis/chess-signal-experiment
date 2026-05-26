@@ -97,5 +97,9 @@ window.Sync = (() => {
     return post({ tab: 'sessions', headers, rows: [row] });
   }
 
-  return { pushMoves, pushSession };
+  async function checkUsername(username) {
+    return post({ action: 'checkUsername', username });
+  }
+
+  return { pushMoves, pushSession, checkUsername };
 })();
