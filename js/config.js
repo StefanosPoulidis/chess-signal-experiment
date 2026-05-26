@@ -6,10 +6,10 @@
 
 window.CONFIG = {
   // Apps Script Web App URL.
-  webAppUrl: 'https://script.google.com/macros/s/AKfycbx7sSzHVy_kpjW9Gp5VfmSAwiHRkeRZwgP8PYmMh18Q0iZeiV80tiRkVcRqlEuZPvGw/exec',
+  webAppUrl: 'https://script.google.com/macros/s/AKfycbxp2kiWBc-8OuOMGKjzyRkYYrFVJL1Xlxz2VlTCt3pehCRUsvfnT3ZF6EDYd3i-lKOZ/exec',
 
   // Must match the SECRET constant in your Apps Script.
-  secret: 'pQ9_xKmn72aB',
+  secret: 'DDTXHxAHt-48DhiTAuWC',
 
   // Set true to skip Google Sheets sync (local-only mode for debugging).
   skipSync: false,
