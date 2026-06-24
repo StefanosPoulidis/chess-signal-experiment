@@ -19,9 +19,13 @@ const requiredQuestions = [
   'After making the first move, I often felt lost in the continuation.',
   'The first move sometimes led to positions that were harder to continue than I expected.',
   'The one-minute time limit affected my decisions.',
-  'The signal I received was useful for helping me make decisions.',
   'I completed the chess task without using outside help, such as a chess engine, chess website, book, coach, parent, friend, or any other assistance.',
   'When I was shown the recommended move, I followed it even if I did not fully understand why it was good.',
+  'Because I was told there was a unique best move, I looked more carefully than I would in a normal game.',
+];
+
+const removedQuestions = [
+  'The signal I received was useful for helping me make decisions.',
   'When I was told there was a uniquely optimal move, I searched more carefully than I otherwise would have.',
 ];
 
@@ -32,9 +36,15 @@ for (const question of requiredQuestions) {
   assert(game.includes(question), `missing survey question text: ${question}`);
 }
 
-for (let i = 1; i <= 7; i += 1) {
-  assert(game.includes(`name: 'q${i}'`), `missing stable survey field q${i}`);
+for (const question of removedQuestions) {
+  assert(!game.includes(question), `removed survey question still present: ${question}`);
 }
+
+for (const field of ['q1', 'q2', 'q3', 'q4', 'q6', 'q7']) {
+  assert(game.includes(`name: '${field}'`), `missing stable survey field ${field}`);
+}
+
+assert(!game.includes(`name: 'q5'`), 'removed survey field q5 must not be present');
 
 for (const value of ['strongly_disagree', 'disagree', 'neither', 'agree', 'strongly_agree']) {
   assert(game.includes(`value: '${value}'`), `missing Likert value ${value}`);

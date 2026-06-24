@@ -55,11 +55,6 @@ window.Game = (() => {
       options: LIKERT_OPTIONS,
     },
     {
-      name: 'q5',
-      text: 'The signal I received was useful for helping me make decisions.',
-      options: LIKERT_OPTIONS,
-    },
-    {
       name: 'q6',
       text: 'I completed the chess task without using outside help, such as a chess engine, chess website, book, coach, parent, friend, or any other assistance.',
       options: YES_NO_OPTIONS,
@@ -73,7 +68,7 @@ window.Game = (() => {
     {
       name: 'q7',
       condition: 'att',
-      text: 'When I was told there was a uniquely optimal move, I searched more carefully than I otherwise would have.',
+      text: 'Because I was told there was a unique best move, I looked more carefully than I would in a normal game.',
       options: LIKERT_OPTIONS,
     },
   ];
