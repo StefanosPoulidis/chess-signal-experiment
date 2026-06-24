@@ -16,9 +16,9 @@ window.PUZZLES = [
   {
     id: 2,
     playerColor: 'white',
-    perfectPlay: 4.1,
-    bestMove: 'g2h3',   // Kh3
-    startFen: '6k1/2R2r1p/p3pRpQ/1p6/1P6/P5P1/3r2KP/3q4 w - - 0 1',
+    perfectPlay: 4.67,
+    bestMove: 'g3f4',   // gxf4+
+    startFen: '8/8/pp5p/4k1pP/PPP2p2/3K2P1/8/8 w - - 0 41',
   },
   {
     id: 3,
