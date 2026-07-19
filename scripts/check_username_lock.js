@@ -32,6 +32,8 @@ assert(!app.includes("saved.taskStatus !== 'completed'"), 'finishing the chess t
 assert(appsScript.includes("USED_USERNAMES_TAB = 'used_usernames'"), 'Apps Script must define a used_usernames tab');
 assert(appsScript.includes('LockService.getScriptLock'), 'username claim and data append must use a script lock');
 assert(appsScript.includes("code: 'username_used'"), 'duplicate final submissions must return username_used');
+assert(appsScript.includes('used.sessionId === sessionId'), 'the owning session must be resumable after an ambiguous final response');
+assert(appsScript.includes("completed: used.status === 'completed'"), 'resume response must report server completion status');
 assert(appsScript.includes("data.action === 'checkUsername'"), 'Apps Script must handle checkUsername action');
 assert(appsScript.includes("data.action === 'claimUsername'"), 'Apps Script must handle claimUsername action');
 assert(appsScript.includes("data.action === 'backfillUsedUsernames'"), 'Apps Script must support backfilling existing sessions');

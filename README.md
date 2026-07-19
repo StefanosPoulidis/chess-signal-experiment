@@ -64,7 +64,14 @@ to a Google Apps Script Web App. Stable record IDs make retries idempotent.
 
 The server atomically claims a username at login. Data writes must carry the
 same session ID that owns that claim, and duplicate move/puzzle/session IDs are
-ignored rather than appended again.
+ignored rather than appended again. Response tabs expand automatically as the
+sample grows. A final session row is accepted, and the username marked complete,
+only after the server verifies all six puzzle records and reconciles the saved
+move rows against each puzzle's recorded move count.
+
+`ensureProductionCapacity()` may be run once from the Apps Script editor to
+preallocate 5,000 move rows. This is optional because normal writes also expand
+the response tabs automatically before reaching their row limits.
 
 ## Username DB
 

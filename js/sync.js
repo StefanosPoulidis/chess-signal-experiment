@@ -185,7 +185,16 @@ window.Sync = (() => {
   async function flushSession(state, surveyAnswers) {
     const result = await pushPuzzlesData(state, state.puzzles);
     if (!result.ok && !result.skipped) return result;
-    return appendRecords('sessions', [sessionRecord(state, surveyAnswers)]);
+    const sessionResult = await appendRecords('sessions', [sessionRecord(state, surveyAnswers)]);
+    if (!sessionResult.ok || sessionResult.skipped) return sessionResult;
+    if (sessionResult.verifiedPuzzleRecords !== 6 ||
+        sessionResult.verifiedMoveRecords !== state.puzzles.reduce(
+          (total, puzzle) => total + (puzzle.moves || []).length,
+          0
+        )) {
+      return { ok: false, error: 'server could not verify the complete response set' };
+    }
+    return sessionResult;
   }
 
   function checkUsername(username) {

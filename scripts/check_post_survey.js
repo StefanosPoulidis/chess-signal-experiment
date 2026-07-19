@@ -57,5 +57,7 @@ assert(game.includes(`value: 'no'`), 'Q6 must include no option');
 assert(game.includes(`condition: 'act'`), 'Q7 action condition must be explicit');
 assert(game.includes(`condition: 'att'`), 'Q7 attention condition must be explicit');
 assert(game.includes("state.dataQualityExclude = answers.q6 === 'yes'"), 'Yes to outside help must set the exclusion flag');
+assert(game.includes('session.surveyAnswers || {}'), 'saved survey answers must be restored after refresh');
+assert(game.includes('input.checked = savedAnswers[question.name] === option.value'), 'restored survey answers must be preselected');
 
 console.log('post-study survey contract ok');

@@ -724,7 +724,7 @@ window.Game = (() => {
 
   function showSurvey() {
     session = Store.load();
-    renderSurvey(session.participant.condition);
+    renderSurvey(session.participant.condition, session.surveyAnswers || {});
     els['experiment-ui'].classList.add('hidden');
     els['finished-ui'].classList.add('hidden');
     els['survey-ui'].classList.remove('hidden');
@@ -735,7 +735,7 @@ window.Game = (() => {
     }
   }
 
-  function renderSurvey(condition) {
+  function renderSurvey(condition, savedAnswers) {
     const container = els['survey-fields'];
     if (!container) return;
     container.innerHTML = '';
@@ -760,6 +760,7 @@ window.Game = (() => {
         input.name = question.name;
         input.value = option.value;
         input.required = true;
+        input.checked = savedAnswers[question.name] === option.value;
         const text = document.createElement('span');
         text.textContent = option.label;
         label.appendChild(input);

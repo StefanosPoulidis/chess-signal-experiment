@@ -109,8 +109,15 @@ function handleClaimUsername_(data) {
 
     const used = findUsernameUse_(ss, username);
     if (used) {
-      if (used.sessionId && used.sessionId === sessionId && used.status !== 'completed') {
-        return out({ ok: true, username, condition, sessionId, resumed: true });
+      if (used.sessionId && used.sessionId === sessionId) {
+        return out({
+          ok: true,
+          username,
+          condition,
+          sessionId,
+          resumed: true,
+          completed: used.status === 'completed',
+        });
       }
       return out({
         ok: false,
@@ -147,11 +154,21 @@ function handleAppendRecords_(data) {
     const identity = validateRecordIdentity_(ss, records);
     if (!identity.ok) return out(identity);
 
+    let completionReceipt = {};
+    if (dataset === 'sessions') {
+      const verification = verifySessionCompleteness_(ss, identity, records[0]);
+      if (!verification.ok) return out(verification);
+      completionReceipt = {
+        verifiedPuzzleRecords: verification.verifiedPuzzleRecords,
+        verifiedMoveRecords: verification.verifiedMoveRecords,
+      };
+    }
+
     const result = appendUniqueRecords_(ss, dataset, schema, records);
     if (dataset === 'sessions') {
       markUsernameCompleted_(ss, identity.username, identity.sessionId);
     }
-    return out({ ok: true, dataset, ...result });
+    return out({ ok: true, dataset, ...result, ...completionReceipt });
   } finally {
     lock.releaseLock();
   }
@@ -207,9 +224,132 @@ function appendUniqueRecords_(ss, dataset, schema, records) {
   });
 
   if (rows.length) {
-    sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, schema.headers.length).setValues(rows);
+    const startRow = sheet.getLastRow() + 1;
+    ensureRowCapacity_(sheet, startRow + rows.length - 1);
+    sheet.getRange(startRow, 1, rows.length, schema.headers.length).setValues(rows);
   }
   return { appended: rows.length, skippedExisting: records.length - rows.length };
+}
+
+function ensureRowCapacity_(sheet, requiredLastRow) {
+  const maxRows = sheet.getMaxRows();
+  if (requiredLastRow <= maxRows) return;
+  const missingRows = requiredLastRow - maxRows;
+  sheet.insertRowsAfter(maxRows, Math.max(1000, missingRows));
+}
+
+function verifySessionCompleteness_(ss, identity, sessionRecord) {
+  const expectedVersion = String(sessionRecord.experiment_version || '');
+  const expectedSchema = String(sessionRecord.schema_version || '');
+  const puzzleData = rowsForSession_(ss, 'puzzles', identity.sessionId);
+  const moveData = rowsForSession_(ss, 'moves', identity.sessionId);
+
+  if (!puzzleData.ok || !moveData.ok) {
+    return {
+      ok: false,
+      code: 'incomplete_session',
+      error: 'required response tables are unavailable',
+    };
+  }
+
+  const puzzles = puzzleData.rows;
+  if (puzzles.length !== 6) {
+    return {
+      ok: false,
+      code: 'incomplete_session',
+      error: `expected 6 puzzle records, found ${puzzles.length}`,
+    };
+  }
+
+  const puzzleIds = new Set();
+  const expectedMovesByPuzzle = {};
+  for (let i = 0; i < puzzles.length; i += 1) {
+    const row = puzzles[i];
+    const puzzleId = String(rowValue_(puzzleData, row, 'puzzle_id'));
+    const movesCompleted = Number(rowValue_(puzzleData, row, 'moves_completed'));
+    if (!puzzleId || puzzleIds.has(puzzleId) || !Number.isInteger(movesCompleted) || movesCompleted < 0 || movesCompleted > 5) {
+      return { ok: false, code: 'incomplete_session', error: 'invalid puzzle record set' };
+    }
+    if (!rowMatchesIdentity_(puzzleData, row, identity, expectedVersion, expectedSchema)) {
+      return { ok: false, code: 'incomplete_session', error: 'puzzle record identity mismatch' };
+    }
+    puzzleIds.add(puzzleId);
+    expectedMovesByPuzzle[puzzleId] = movesCompleted;
+  }
+
+  const requiredPuzzleIds = ['1', '2', '3', '4', '5', '6'];
+  if (requiredPuzzleIds.some(id => !puzzleIds.has(id))) {
+    return { ok: false, code: 'incomplete_session', error: 'puzzle record set is incomplete' };
+  }
+
+  const moves = moveData.rows;
+  const moveIds = new Set();
+  const actualMovesByPuzzle = {};
+  for (let i = 0; i < moves.length; i += 1) {
+    const row = moves[i];
+    const puzzleId = String(rowValue_(moveData, row, 'puzzle_id'));
+    const moveId = String(rowValue_(moveData, row, 'move_id'));
+    if (!puzzleIds.has(puzzleId) || !moveId || moveIds.has(moveId)) {
+      return { ok: false, code: 'incomplete_session', error: 'invalid move record set' };
+    }
+    if (!rowMatchesIdentity_(moveData, row, identity, expectedVersion, expectedSchema)) {
+      return { ok: false, code: 'incomplete_session', error: 'move record identity mismatch' };
+    }
+    moveIds.add(moveId);
+    actualMovesByPuzzle[puzzleId] = (actualMovesByPuzzle[puzzleId] || 0) + 1;
+  }
+
+  for (let i = 0; i < requiredPuzzleIds.length; i += 1) {
+    const puzzleId = requiredPuzzleIds[i];
+    if ((actualMovesByPuzzle[puzzleId] || 0) !== expectedMovesByPuzzle[puzzleId]) {
+      return {
+        ok: false,
+        code: 'incomplete_session',
+        error: `move records do not reconcile for puzzle ${puzzleId}`,
+      };
+    }
+  }
+
+  const declaredCompleted = Number(sessionRecord.puzzles_completed_before_timeout || 0);
+  const declaredTimedOut = Number(sessionRecord.puzzles_timed_out_or_unstarted || 0);
+  if (declaredCompleted + declaredTimedOut !== 6) {
+    return { ok: false, code: 'incomplete_session', error: 'session puzzle totals do not reconcile' };
+  }
+
+  return {
+    ok: true,
+    verifiedPuzzleRecords: puzzles.length,
+    verifiedMoveRecords: moves.length,
+  };
+}
+
+function rowsForSession_(ss, sheetName, sessionId) {
+  const sheet = ss.getSheetByName(sheetName);
+  if (!sheet || sheet.getLastRow() < 1) return { ok: false, headers: [], index: {}, rows: [] };
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(String);
+  const index = {};
+  headers.forEach((header, position) => { index[header] = position; });
+  if (index.session_id === undefined) return { ok: false, headers, index, rows: [] };
+  const values = sheet.getLastRow() >= 2
+    ? sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn()).getValues()
+    : [];
+  return {
+    ok: true,
+    headers,
+    index,
+    rows: values.filter(row => String(row[index.session_id] || '') === sessionId),
+  };
+}
+
+function rowValue_(data, row, header) {
+  return data.index[header] === undefined ? '' : row[data.index[header]];
+}
+
+function rowMatchesIdentity_(data, row, identity, experimentVersion, schemaVersion) {
+  return normalizeUsername_(rowValue_(data, row, 'username')) === identity.username &&
+    String(rowValue_(data, row, 'condition')).toLowerCase() === identity.condition &&
+    String(rowValue_(data, row, 'experiment_version')) === experimentVersion &&
+    String(rowValue_(data, row, 'schema_version')) === schemaVersion;
 }
 
 function ensureDatasetSheet_(ss, name, headers) {
@@ -313,6 +453,32 @@ function migrateToSchemaV2() {
     migrateUsedUsernames_(ss);
     ensureDatasetSheet_(ss, 'puzzles', DATASET_SCHEMAS.puzzles.headers);
     return { ok: true, schemaVersion: 2 };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// Run from the Apps Script editor before launch if preallocated capacity is
+// preferred. Normal writes also expand each response tab automatically.
+function ensureProductionCapacity() {
+  const minimumRows = {
+    used_usernames: 1000,
+    sessions: 1000,
+    puzzles: 1000,
+    moves: 5000,
+  };
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const result = {};
+    Object.keys(minimumRows).forEach(name => {
+      const sheet = ss.getSheetByName(name);
+      if (!sheet) throw new Error(`missing response tab ${name}`);
+      ensureRowCapacity_(sheet, minimumRows[name]);
+      result[name] = sheet.getMaxRows();
+    });
+    return { ok: true, rows: result };
   } finally {
     lock.releaseLock();
   }
