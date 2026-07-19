@@ -1,8 +1,6 @@
 'use strict';
 
-// Session state + per-move logging + JSON/CSV download.
-// All data lives in localStorage (key: "session") so a refresh doesn't lose work,
-// plus sessionStorage holds a pointer to the active participant.
+// Persistent experiment state and decision-clock accounting.
 
 window.Store = (() => {
   const KEY = 'chess-signal-session';
@@ -20,16 +18,91 @@ window.Store = (() => {
     localStorage.removeItem(KEY);
   }
 
-  function init(participant, puzzleOrder) {
+  function init(participant, puzzleOrder, config) {
+    const c = config || {};
     const state = {
-      participant,          // { username, condition }
-      puzzleOrder,          // array of puzzle ids in play order
-      currentIdx: 0,        // index into puzzleOrder
+      schemaVersion: c.schemaVersion || 2,
+      experimentVersion: c.experimentVersion || 'unknown',
+      sessionId: participant.sessionId,
+      participant,
+      puzzleOrder,
+      currentIdx: 0,
       startedAt: Date.now(),
-      puzzles: [],          // per-puzzle records, appended as they complete
+      chessTaskEndedAt: null,
+      surveySubmittedAt: null,
+      taskStatus: 'in_progress',
+      totalDecisionTimeMs: c.totalDecisionTimeMs || 6 * 60 * 1000,
+      decisionTimeUsedMs: 0,
+      activeDecisionStartedAt: null,
+      activePuzzle: null,
+      puzzles: [],
     };
     save(state);
     return state;
+  }
+
+  function remainingDecisionMs(state, now) {
+    if (!state) return 0;
+    const at = now === undefined ? Date.now() : now;
+    const activeMs = state.activeDecisionStartedAt === null
+      ? 0
+      : Math.max(0, at - state.activeDecisionStartedAt);
+    return Math.max(0, state.totalDecisionTimeMs - state.decisionTimeUsedMs - activeMs);
+  }
+
+  function beginDecisionTurn(now) {
+    const at = now === undefined ? Date.now() : now;
+    let result;
+    const state = update(s => {
+      const remaining = remainingDecisionMs(s, at);
+      if (remaining <= 0) {
+        result = { started: false, remainingMs: 0 };
+        return;
+      }
+      if (s.activeDecisionStartedAt === null) {
+        s.activeDecisionStartedAt = at;
+        if (s.activePuzzle) s.activePuzzle.moveStartedRemainingMs = remaining;
+      }
+      result = {
+        started: true,
+        remainingMs: remainingDecisionMs(s, at),
+        moveStartedRemainingMs: s.activePuzzle
+          ? s.activePuzzle.moveStartedRemainingMs
+          : remaining,
+      };
+    });
+    return { ...result, state };
+  }
+
+  function pauseDecisionTurn(now) {
+    const at = now === undefined ? Date.now() : now;
+    let result = {
+      elapsedMs: 0,
+      moveStartedRemainingMs: null,
+      remainingMs: 0,
+      cumulativeDecisionTimeMs: 0,
+    };
+    const state = update(s => {
+      if (s.activeDecisionStartedAt !== null) {
+        const availableAtStart = Math.max(0, s.totalDecisionTimeMs - s.decisionTimeUsedMs);
+        const elapsed = Math.min(
+          availableAtStart,
+          Math.max(0, at - s.activeDecisionStartedAt)
+        );
+        s.decisionTimeUsedMs = Math.min(
+          s.totalDecisionTimeMs,
+          s.decisionTimeUsedMs + elapsed
+        );
+        result.elapsedMs = elapsed;
+        result.moveStartedRemainingMs = s.activePuzzle
+          ? s.activePuzzle.moveStartedRemainingMs
+          : availableAtStart;
+        s.activeDecisionStartedAt = null;
+      }
+      result.remainingMs = remainingDecisionMs(s, at);
+      result.cumulativeDecisionTimeMs = s.decisionTimeUsedMs;
+    });
+    return { ...result, state };
   }
 
   function update(fn) {
@@ -133,5 +206,18 @@ window.Store = (() => {
     download(`${base}.csv`, toCsv(), 'text/csv');
   }
 
-  return { init, load, save, update, clear, downloadJson, downloadCsv, toJson, toCsv };
+  return {
+    init,
+    load,
+    save,
+    update,
+    clear,
+    remainingDecisionMs,
+    beginDecisionTurn,
+    pauseDecisionTurn,
+    downloadJson,
+    downloadCsv,
+    toJson,
+    toCsv,
+  };
 })();

@@ -1,24 +1,22 @@
 'use strict';
 
-// Game flow controller.
-// Orchestrates puzzle sequence, move timing, Stockfish calls, and logging.
-// Requires: chess.js (Chess global), Engine, Board, Store, PUZZLES, MOVES_PER_PUZZLE.
+// Experiment flow: six randomized puzzles, a persistent six-minute active
+// decision-time budget, condition-specific first-move signals, and survey sync.
 
 window.Game = (() => {
   const els = {};
-  let session = null;     // Store state
-  let puzzle = null;      // current puzzle spec
-  let chess = null;       // chess.js instance
-  let moveIdx = 0;        // 0..MOVES_PER_PUZZLE - 1 (next player move)
-  let moveStartTs = 0;    // ms
-  let evalBeforeMoveCp = null;     // cp at current fen_before_move (white's POV)
-  let evalBeforeMoveMate = null;   // mate distance, or null
+  let session = null;
+  let puzzle = null;
+  let chess = null;
   let puzzleRecord = null;
+  let moveIdx = 0;
   let timerInterval = null;
-  let acceptingInput = false;       // true only when it's the player's turn
-  let moveTimesThisPuzzle = [];     // seconds, appended per completed move
-  let advancing = false;            // guards double-click on "Next puzzle"
-  let selectedSquare = null;        // click-to-move: currently selected origin square
+  let timerDeadline = null;
+  let acceptingInput = false;
+  let advancing = false;
+  let timingOut = false;
+  let selectedSquare = null;
+  let illegalHintTimeout = null;
 
   const LIKERT_OPTIONS = [
     { value: 'strongly_disagree', label: 'Strongly disagree' },
@@ -51,12 +49,12 @@ window.Game = (() => {
     },
     {
       name: 'q4',
-      text: 'The one-minute time limit affected my decisions.',
+      text: 'The six-minute total time budget affected how I allocated my time across moves and puzzles.',
       options: LIKERT_OPTIONS,
     },
     {
       name: 'q6',
-      text: 'I completed the chess task without using outside help, such as a chess engine, chess website, book, coach, parent, friend, or any other assistance.',
+      text: 'Did you use any outside help while completing the chess task, such as a chess engine, chess website, book, coach, parent, friend, or any other assistance?',
       options: YES_NO_OPTIONS,
     },
     {
@@ -73,137 +71,136 @@ window.Game = (() => {
     },
   ];
 
-  // ---------- lifecycle ----------
+  function config() {
+    return window.CONFIG || {};
+  }
 
   async function start() {
     cacheEls();
-    const pStr = sessionStorage.getItem('participant');
-    if (!pStr) {
+    const participantRaw = sessionStorage.getItem('participant');
+    if (!participantRaw) {
       window.location.href = 'index.html';
       return;
     }
-    const participant = JSON.parse(pStr);
+    const participant = JSON.parse(participantRaw);
+    const existing = Store.load();
+    const canResume = existing &&
+      existing.participant.username === participant.username &&
+      existing.sessionId === participant.sessionId &&
+      existing.experimentVersion === config().experimentVersion;
 
-    // Fresh or resumed session?
-    session = Store.load();
-    if (!session || session.participant.username !== participant.username) {
-      const order = shuffle(PUZZLES.map(p => p.id));
-      session = Store.init(participant, order);
+    const puzzleOrder = config().localSmokeTest
+      ? PUZZLES.map(item => item.id)
+      : shuffle(PUZZLES.map(item => item.id));
+    session = canResume
+      ? existing
+      : Store.init(participant, puzzleOrder, config());
+
+    if (session.surveySubmittedAt) {
+      showFinished();
+      return;
+    }
+    if (session.taskStatus !== 'in_progress') {
+      showSurvey();
+      return;
     }
 
-    setStatus('Loading engine…');
+    setStatus('Loading engine...');
     await Engine.init();
 
-    await loadNextPuzzle();
+    if (Store.remainingDecisionMs(session) <= 0) {
+      await expireTimeBudget();
+    } else if (session.activePuzzle) {
+      await resumeActivePuzzle();
+    } else {
+      await loadNextPuzzle();
+    }
   }
 
   function cacheEls() {
-    ['status', 'puzzle-indicator', 'condition-badge', 'banner', 'timer',
-     'move-counter', 'clock-history', 'next-button',
-     'survey-ui', 'survey-form', 'survey-fields', 'survey-submit', 'survey-status',
-     'finished-ui', 'experiment-ui', 'promotion-modal']
-      .forEach(id => { els[id] = document.getElementById(id); });
+    [
+      'status', 'puzzle-indicator', 'condition-badge', 'banner', 'timer',
+      'move-counter', 'next-button', 'survey-ui', 'survey-form', 'survey-fields',
+      'survey-submit', 'survey-status', 'survey-intro', 'finished-ui',
+      'experiment-ui', 'promotion-modal',
+    ].forEach(id => { els[id] = document.getElementById(id); });
   }
 
   function setStatus(text) {
-    if (els['status']) els['status'].textContent = text;
+    if (els.status) els.status.textContent = text;
   }
 
-  function startTimer() {
-    stopTimer();
-    moveStartTs = performance.now();
-    if (!els['timer']) return;
-    const update = () => {
-      const secs = (performance.now() - moveStartTs) / 1000;
-      els['timer'].textContent = secs.toFixed(1);
-    };
-    update();
-    timerInterval = setInterval(update, 100);
+  function formatRemaining(ms) {
+    const tenths = Math.max(0, Math.ceil(ms / 100) / 10);
+    const minutes = Math.floor(tenths / 60);
+    const seconds = (tenths - minutes * 60).toFixed(1).padStart(4, '0');
+    return `${minutes}:${seconds}`;
   }
 
-  function stopTimer() {
-    if (timerInterval) {
-      clearInterval(timerInterval);
-      timerInterval = null;
+  function renderClock() {
+    session = Store.load();
+    const remaining = Store.remainingDecisionMs(session);
+    if (els.timer) els.timer.textContent = formatRemaining(remaining);
+    const clock = els.timer ? els.timer.closest('.chess-clock') : null;
+    if (clock) {
+      clock.classList.toggle('clock-warning', remaining > 0 && remaining <= 60000);
+      clock.classList.toggle('clock-expired', remaining <= 0);
     }
+    if (remaining <= 0 && acceptingInput) expireTimeBudget();
   }
 
-  function renderClockHistory() {
-    const el = els['clock-history'];
-    if (!el) return;
-    el.innerHTML = '';
-    moveTimesThisPuzzle.forEach((t, i) => {
-      const chip = document.createElement('span');
-      chip.className = 'clock-chip';
-      const lbl = document.createElement('span');
-      lbl.className = 'chip-label';
-      lbl.textContent = `M${i + 1}`;
-      const val = document.createElement('span');
-      val.textContent = `${t.toFixed(1)}s`;
-      chip.appendChild(lbl);
-      chip.appendChild(val);
-      el.appendChild(chip);
-    });
+  function stopClockUi() {
+    if (timerInterval) clearInterval(timerInterval);
+    if (timerDeadline) clearTimeout(timerDeadline);
+    timerInterval = null;
+    timerDeadline = null;
   }
 
-  // ---------- puzzle flow ----------
+  function startDecisionClock() {
+    stopClockUi();
+    const timing = Store.beginDecisionTurn();
+    session = timing.state;
+    puzzleRecord = session.activePuzzle;
+    if (!timing.started || timing.remainingMs <= 0) {
+      expireTimeBudget();
+      return false;
+    }
+    renderClock();
+    timerInterval = setInterval(renderClock, 100);
+    timerDeadline = setTimeout(expireTimeBudget, timing.remainingMs + 25);
+    return true;
+  }
+
+  function pauseDecisionClock() {
+    stopClockUi();
+    const timing = Store.pauseDecisionTurn();
+    session = timing.state;
+    puzzleRecord = session.activePuzzle;
+    renderClock();
+    return timing;
+  }
 
   async function loadNextPuzzle() {
+    session = Store.load();
     if (session.currentIdx >= session.puzzleOrder.length) {
-      finishSession();
+      finishCompletedSession();
       return;
     }
-    const pid = session.puzzleOrder[session.currentIdx];
-    puzzle = PUZZLES.find(p => p.id === pid);
+    if (Store.remainingDecisionMs(session) <= 0) {
+      await expireTimeBudget();
+      return;
+    }
+
+    const puzzleId = session.puzzleOrder[session.currentIdx];
+    puzzle = PUZZLES.find(item => item.id === puzzleId);
     chess = new Chess(puzzle.startFen);
     moveIdx = 0;
-    evalBeforeMoveCp = null;
-    evalBeforeMoveMate = null;
-    moveTimesThisPuzzle = [];
-    renderClockHistory();
-    if (els['timer']) els['timer'].textContent = '0.0';
+    preparePuzzleUi(puzzle.startFen, session.currentIdx + 1);
 
-    els['condition-badge'].textContent = session.participant.condition.toUpperCase();
-    els['condition-badge'].className = 'badge ' + session.participant.condition;
-    els['puzzle-indicator'].textContent =
-      `Puzzle ${session.currentIdx + 1} of ${session.puzzleOrder.length}`;
-
-    // Initial board
-    Board.destroy();
-    selectedSquare = null;
-    Board.create({
-      elementId: 'chess-board',
-      fen: puzzle.startFen,
-      playerColor: puzzle.playerColor,
-      onDrop: handleDrop,
-      onDragStart: handleDragStart,
-    });
-    Board.setupClickHandler(onSquareClick);
-    // Small delay so DOM measures correctly
-    await new Promise(r => setTimeout(r, 30));
-    Board.resize();
-
-    setStatus('Analyzing starting position…');
-    const startAnalysis = await Engine.analyze(puzzle.startFen);
-    evalBeforeMoveCp = startAnalysis.cp;
-    evalBeforeMoveMate = startAnalysis.mate;
-
-    // Prefer the hardcoded puzzle.bestMove for the `act` signal; fall back to
-    // Stockfish's live best move if the puzzle doesn't specify one.
-    const displayedBestUci = (puzzle.bestMove && isValidUci(puzzle.bestMove))
-      ? puzzle.bestMove
-      : startAnalysis.bestMoveUci;
-
-    let bestMoveSan = null;
-    if (isValidUci(displayedBestUci)) {
-      const testChess = new Chess(puzzle.startFen);
-      const moveObj = testChess.move({
-        from: displayedBestUci.slice(0, 2),
-        to: displayedBestUci.slice(2, 4),
-        promotion: displayedBestUci.length === 5 ? displayedBestUci[4] : undefined,
-      });
-      bestMoveSan = moveObj ? moveObj.san : null;
-    }
+    setStatus('Analyzing starting position...');
+    const startAnalysis = await analyzePosition(chess);
+    const signal = getSignalMove(puzzle, startAnalysis);
+    const remaining = Store.remainingDecisionMs(Store.load());
 
     puzzleRecord = {
       puzzleId: puzzle.id,
@@ -212,92 +209,151 @@ window.Game = (() => {
       startFen: puzzle.startFen,
       startEvalCp: startAnalysis.cp,
       startEvalMate: startAnalysis.mate,
-      startBestMoveSan: bestMoveSan,
-      startBestMoveUci: displayedBestUci,
+      startBestMoveSan: signal.san,
+      startBestMoveUci: signal.uci,
       startStockfishBestMoveUci: startAnalysis.bestMoveUci,
+      status: 'in_progress',
+      endReason: '',
+      startedAt: Date.now(),
+      endedAt: null,
+      completedBeforeTimeout: null,
+      puzzleStartedRemainingMs: remaining,
+      puzzleEndedRemainingMs: null,
+      currentFen: puzzle.startFen,
+      currentEvalCp: startAnalysis.cp,
+      currentEvalMate: startAnalysis.mate,
+      terminalOutcome: '',
+      moveStartedRemainingMs: null,
+      pendingMove: null,
       moves: [],
     };
+    persistActivePuzzle();
 
-    showSignal(displayedBestUci, bestMoveSan);
+    showSignal(signal.uci, signal.san);
     setStatus('Your move.');
     updateMoveCounter();
     acceptingInput = true;
-    startTimer();
+    startDecisionClock();
+  }
+
+  async function resumeActivePuzzle() {
+    session = Store.load();
+    puzzleRecord = session.activePuzzle;
+    puzzle = PUZZLES.find(item => item.id === puzzleRecord.puzzleId);
+    chess = new Chess(puzzleRecord.currentFen || puzzle.startFen);
+    moveIdx = (puzzleRecord.moves || []).length;
+    preparePuzzleUi(chess.fen(), puzzleRecord.puzzleOrder);
+
+    if (puzzleRecord.pendingMove) {
+      hideSignal();
+      await processPendingMove();
+      return;
+    }
+
+    if (moveIdx === 0) {
+      showSignal(puzzleRecord.startBestMoveUci, puzzleRecord.startBestMoveSan);
+    } else {
+      hideSignal();
+    }
+    setStatus('Your move.');
+    updateMoveCounter();
+    acceptingInput = true;
+    startDecisionClock();
+  }
+
+  function preparePuzzleUi(fen, order) {
+    acceptingInput = false;
+    selectedSquare = null;
+    els['next-button'].classList.add('hidden');
+    els['condition-badge'].textContent = session.participant.condition.toUpperCase();
+    els['condition-badge'].className = `badge ${session.participant.condition}`;
+    els['puzzle-indicator'].textContent = `Puzzle ${order} of ${session.puzzleOrder.length}`;
+    Board.destroy();
+    Board.create({
+      elementId: 'chess-board',
+      fen,
+      playerColor: puzzle.playerColor,
+      onDrop: handleDrop,
+      onDragStart: handleDragStart,
+    });
+    Board.setupClickHandler(onSquareClick);
+    setTimeout(() => Board.resize(), 30);
+    renderClock();
   }
 
   function updateMoveCounter() {
     if (els['move-counter']) {
-      els['move-counter'].textContent =
-        `Move ${moveIdx + 1} of ${window.MOVES_PER_PUZZLE}`;
+      els['move-counter'].textContent = `Move ${moveIdx + 1} of ${window.MOVES_PER_PUZZLE}`;
     }
+  }
+
+  function getSignalMove(spec, analysis) {
+    const uci = spec.bestMove && isValidUci(spec.bestMove)
+      ? spec.bestMove
+      : analysis.bestMoveUci;
+    if (!isValidUci(uci)) return { uci: '', san: '' };
+    const position = new Chess(spec.startFen);
+    const move = position.move({
+      from: uci.slice(0, 2),
+      to: uci.slice(2, 4),
+      promotion: uci.length === 5 ? uci[4] : undefined,
+    });
+    return { uci, san: move ? move.san : '' };
   }
 
   function showSignal(bestMoveUci, bestMoveSan) {
-    const cond = session.participant.condition;
-    const banner = els['banner'];
+    const banner = els.banner;
     banner.classList.remove('hidden', 'att', 'act');
-    if (cond === 'att') {
+    if (session.participant.condition === 'att') {
       banner.classList.add('att');
       banner.textContent = 'There is a unique optimal move here!';
-    } else if (cond === 'act') {
-      banner.classList.add('act');
-      if (bestMoveSan && isValidUci(bestMoveUci)) {
-        banner.textContent = `Best move: ${bestMoveSan}`;
-        Board.drawArrow(bestMoveUci.slice(0, 2), bestMoveUci.slice(2, 4), puzzle.playerColor);
-      } else {
-        // Fallback: don't render a bogus arrow / label.
-        banner.textContent = 'No recommended move available for this position.';
-      }
+      return;
+    }
+    banner.classList.add('act');
+    if (bestMoveSan && isValidUci(bestMoveUci)) {
+      banner.textContent = `Best move: ${bestMoveSan}`;
+      Board.drawArrow(bestMoveUci.slice(0, 2), bestMoveUci.slice(2, 4), puzzle.playerColor);
+    } else {
+      banner.textContent = 'No recommended move available for this position.';
     }
   }
 
-  // Valid UCI: 4 chars (e.g., "e2e4") or 5 chars with promotion ("e7e8q"),
-  // all chars in a-h / 1-8 for squares, promotion piece in qrbn.
-  function isValidUci(uci) {
-    if (typeof uci !== 'string') return false;
-    if (uci.length !== 4 && uci.length !== 5) return false;
-    if (!/^[a-h][1-8][a-h][1-8]([qrbn])?$/.test(uci)) return false;
-    return true;
-  }
-
   function hideSignal() {
-    const banner = els['banner'];
-    banner.classList.add('hidden');
-    banner.textContent = '';
+    if (!els.banner) return;
+    els.banner.classList.add('hidden');
+    els.banner.textContent = '';
     Board.clearArrows();
   }
 
-  // ---------- move handling ----------
+  function isValidUci(uci) {
+    return typeof uci === 'string' && /^[a-h][1-8][a-h][1-8]([qrbn])?$/.test(uci);
+  }
 
-  // Prevent dragging opponent pieces or dragging at all when it's not the player's turn.
+  function persistActivePuzzle() {
+    session = Store.update(state => { state.activePuzzle = puzzleRecord; });
+  }
+
   function handleDragStart(source, piece) {
-    if (!acceptingInput) return false;
-    if (!puzzle) return false;
+    if (!acceptingInput || !puzzle) return false;
     const playerLetter = puzzle.playerColor === 'white' ? 'w' : 'b';
     if (piece[0] !== playerLetter) return false;
-    // Any in-progress click selection should clear on drag start.
     clearSelection();
     return true;
   }
 
-  // Chessboard.js onDrop is sync-only. Returning 'snapback' reverts the piece.
-  function handleDrop(source, target, piece, newPos, oldPos, orientation) {
-    if (!acceptingInput) return 'snapback';
-    if (source === target || target === 'offboard') return 'snapback';
+  function handleDrop(source, target, piece) {
+    if (!acceptingInput || source === target || target === 'offboard') return 'snapback';
     const accepted = attemptMove(source, target, piece);
-    if (accepted === 'promotion') return 'snapback';  // snap back while modal is open
+    if (accepted === 'promotion') return 'snapback';
     return accepted ? undefined : 'snapback';
   }
 
-  // Click-to-move: first click selects a friendly piece, second click tries to move.
   function onSquareClick(square) {
     if (!acceptingInput) return;
     const playerLetter = puzzle.playerColor === 'white' ? 'w' : 'b';
     const piece = chess.get(square);
-
     if (selectedSquare === null) {
-      if (!piece || piece.color !== playerLetter) return;
-      selectSquare(square);
+      if (piece && piece.color === playerLetter) selectSquare(square);
       return;
     }
     if (square === selectedSquare) {
@@ -305,30 +361,21 @@ window.Game = (() => {
       return;
     }
     if (piece && piece.color === playerLetter) {
-      // Switch selection to another friendly piece.
       clearSelection();
       selectSquare(square);
       return;
     }
-    // Attempt move from selectedSquare -> square.
-    const from = selectedSquare;
+    const source = selectedSquare;
     clearSelection();
-    const fromPiece = chess.get(from);
-    if (!fromPiece) return;
-    const pieceStr = fromPiece.color + fromPiece.type.toUpperCase();
-    const accepted = attemptMove(from, square, pieceStr);
-    // Regular moves are visually synced via Board.setPosition in processValidMove.
-    // Promotion moves are synced after the modal choice. Illegal attempts: no-op.
-    if (!accepted) {
-      // Nothing else to do — illegal-hint already shown.
-    }
+    const sourcePiece = chess.get(source);
+    if (!sourcePiece) return;
+    attemptMove(source, square, sourcePiece.color + sourcePiece.type.toUpperCase());
   }
 
   function selectSquare(square) {
     selectedSquare = square;
     Board.highlight(square, 'sq-selected');
-    const moves = chess.moves({ square, verbose: true });
-    for (const m of moves) Board.highlight(m.to, 'sq-target');
+    chess.moves({ square, verbose: true }).forEach(move => Board.highlight(move.to, 'sq-target'));
   }
 
   function clearSelection() {
@@ -338,13 +385,13 @@ window.Game = (() => {
     Board.clearHighlight('sq-target');
   }
 
-  // Shared move logic for drag-drop and click-to-move.
-  // Returns true if the move was accepted or a promotion modal was opened.
-  function attemptMove(source, target, pieceStr) {
-    if (source === target) return false;
-
-    // Promotion path: show chooser, leave chess.js state untouched for now.
-    if (isPromotionMove(source, target, pieceStr)) {
+  function attemptMove(source, target, pieceString) {
+    session = Store.load();
+    if (Store.remainingDecisionMs(session) <= 0) {
+      expireTimeBudget();
+      return false;
+    }
+    if (isPromotionMove(source, target, pieceString)) {
       const probe = new Chess(chess.fen());
       if (!probe.move({ from: source, to: target, promotion: 'q' })) {
         showIllegalHint();
@@ -352,40 +399,49 @@ window.Game = (() => {
       }
       acceptingInput = false;
       openPromotionModal(source, target);
-      // Special sentinel: handleDrop returns 'snapback' so the drag-visual
-      // reverts while the modal is open. If the user picks, completePromotion
-      // applies the move and Board.setPosition syncs; if they cancel, the
-      // pawn is already visually back on its origin square.
       return 'promotion';
     }
+    return commitMove(source, target, 'q');
+  }
 
-    const timeMs = Math.round(performance.now() - moveStartTs);
-    const fenBeforePlayer = chess.fen();
-    const move = chess.move({ from: source, to: target, promotion: 'q' });
+  function commitMove(source, target, promotion) {
+    const fenBeforeMove = chess.fen();
+    const move = chess.move({ from: source, to: target, promotion });
     if (!move) {
       showIllegalHint();
       return false;
     }
     acceptingInput = false;
-    stopTimer();
-    const fenAfterPlayer = chess.fen();
-    processValidMove({ move, source, target, timeMs, fenBeforePlayer, fenAfterPlayer })
-      .catch(err => {
-        console.error(err);
-        setStatus('Error: ' + (err.message || err));
-      });
+    const timing = pauseDecisionClock();
+    const fenAfterMove = chess.fen();
+    puzzleRecord.pendingMove = {
+      moveNumber: moveIdx + 1,
+      fenBeforeMove,
+      evalBeforeMoveCp: puzzleRecord.currentEvalCp,
+      evalBeforeMoveMate: puzzleRecord.currentEvalMate,
+      playerMove: {
+        san: move.san,
+        uci: source + target + (move.promotion || ''),
+      },
+      timeMs: timing.elapsedMs,
+      moveStartedRemainingMs: timing.moveStartedRemainingMs,
+      moveEndedRemainingMs: timing.remainingMs,
+      cumulativeDecisionTimeMs: timing.cumulativeDecisionTimeMs,
+      fenAfterMove,
+    };
+    puzzleRecord.currentFen = fenAfterMove;
+    persistActivePuzzle();
+    hideSignal();
+    Board.setPosition(fenAfterMove);
+    processPendingMove().catch(handleFatalError);
     return true;
   }
 
   function isPromotionMove(source, target, piece) {
-    if (!piece) return false;
-    if (piece[1] !== 'P') return false;
-    if (piece[0] === 'w' && source[1] === '7' && target[1] === '8') return true;
-    if (piece[0] === 'b' && source[1] === '2' && target[1] === '1') return true;
-    return false;
+    if (!piece || piece[1] !== 'P') return false;
+    return (piece[0] === 'w' && source[1] === '7' && target[1] === '8') ||
+      (piece[0] === 'b' && source[1] === '2' && target[1] === '1');
   }
-
-  // ---------- promotion chooser ----------
 
   const PIECE_SYMBOLS = {
     white: { q: '\u2655', r: '\u2656', b: '\u2657', n: '\u2658' },
@@ -395,25 +451,21 @@ window.Game = (() => {
   function openPromotionModal(source, target) {
     const modal = els['promotion-modal'];
     if (!modal) {
-      // Fallback: no modal in DOM, just queen-promote.
-      completePromotion(source, target, 'q');
+      commitMove(source, target, 'q');
       return;
     }
     const symbols = PIECE_SYMBOLS[puzzle.playerColor] || PIECE_SYMBOLS.white;
-    const buttons = modal.querySelectorAll('.promo-btn');
-    buttons.forEach(btn => {
-      const piece = btn.getAttribute('data-piece');
-      const name = btn.getAttribute('data-name');
-      btn.innerHTML = `<span class="promo-piece">${symbols[piece]}</span><span>${name}</span>`;
-      btn.onclick = () => {
+    modal.querySelectorAll('.promo-btn').forEach(button => {
+      const piece = button.getAttribute('data-piece');
+      const name = button.getAttribute('data-name');
+      button.innerHTML = `<span class="promo-piece">${symbols[piece]}</span><span>${name}</span>`;
+      button.onclick = () => {
         closePromotionModal();
-        completePromotion(source, target, piece);
+        commitMove(source, target, piece);
       };
     });
-    const overlay = modal.querySelector('.promotion-overlay');
-    overlay.onclick = () => {
+    modal.querySelector('.promotion-overlay').onclick = () => {
       closePromotionModal();
-      // Pawn is already visually back on source rank (snapback). Let player retry.
       acceptingInput = true;
       setStatus('Your move.');
     };
@@ -421,204 +473,280 @@ window.Game = (() => {
   }
 
   function closePromotionModal() {
-    const modal = els['promotion-modal'];
-    if (modal) modal.classList.add('hidden');
+    if (els['promotion-modal']) els['promotion-modal'].classList.add('hidden');
   }
 
-  function completePromotion(source, target, promotion) {
-    const timeMs = Math.round(performance.now() - moveStartTs);
-    const fenBeforePlayer = chess.fen();
-    const move = chess.move({ from: source, to: target, promotion });
-    if (!move) {
-      // Should not happen (we pre-validated), but restore input if it does.
-      acceptingInput = true;
-      setStatus('Illegal move — try another.');
-      return;
-    }
-    stopTimer();
-    // Snap the board to the correct post-promotion position (pawn -> chosen piece).
-    Board.setPosition(chess.fen());
-    const fenAfterPlayer = chess.fen();
-    processValidMove({ move, source, target, timeMs, fenBeforePlayer, fenAfterPlayer })
-      .catch(err => {
-        console.error(err);
-        setStatus('Error: ' + (err.message || err));
-      });
-  }
-
-  let illegalHintTimeout = null;
   function showIllegalHint() {
-    setStatus('Illegal move — try another.');
+    setStatus('Illegal move - try another.');
     if (illegalHintTimeout) clearTimeout(illegalHintTimeout);
     illegalHintTimeout = setTimeout(() => {
       if (acceptingInput) setStatus('Your move.');
     }, 2500);
   }
 
-  async function processValidMove({ move, source, target, timeMs, fenBeforePlayer, fenAfterPlayer }) {
-    hideSignal();
-    Board.setPosition(fenAfterPlayer);
+  async function processPendingMove() {
+    puzzleRecord = Store.load().activePuzzle;
+    const pending = puzzleRecord.pendingMove;
+    if (!pending) return;
+    chess = new Chess(pending.fenAfterMove);
+    const willContinue = pending.moveNumber < window.MOVES_PER_PUZZLE;
+    setStatus(willContinue && !chess.game_over() ? 'Opponent is thinking...' : 'Analyzing your move...');
 
-    moveTimesThisPuzzle.push(timeMs / 1000);
-    renderClockHistory();
-
-    const willContinue = (moveIdx + 1) < window.MOVES_PER_PUZZLE;
-    const playerMoveEndedGame = chess.game_over();
-
-    // Let Stockfish think DURING the visible pause. Total wait = max(analysis, 1s).
-    // If the player's move ended the game (e.g., delivered mate), skip analysis —
-    // asking Stockfish about a terminal position can hang the worker.
-    setStatus(willContinue && !playerMoveEndedGame ? 'Opponent is thinking…' : 'Analyzing your move…');
-    let after;
-    if (playerMoveEndedGame) {
-      after = { cp: null, mate: null, bestMoveUci: null };
-    } else {
-      [after] = await Promise.all([
-        Engine.analyze(fenAfterPlayer),
-        willContinue ? sleep(1000) : Promise.resolve(),
-      ]);
-    }
-
-    const record = {
-      moveNumber: moveIdx + 1,
-      fenBeforeMove: fenBeforePlayer,
-      evalBeforeMoveCp: evalBeforeMoveCp,
-      evalBeforeMoveMate: evalBeforeMoveMate,
-      playerMove: {
-        san: move.san,
-        uci: source + target + (move.promotion ? move.promotion : ''),
-      },
-      timeMs,
-      fenAfterMove: fenAfterPlayer,
-      evalAfterMoveCp: after.cp,
-      evalAfterMoveMate: after.mate,
+    const afterPlayer = await analyzePosition(chess);
+    const moveRecord = {
+      moveNumber: pending.moveNumber,
+      fenBeforeMove: pending.fenBeforeMove,
+      evalBeforeMoveCp: pending.evalBeforeMoveCp,
+      evalBeforeMoveMate: pending.evalBeforeMoveMate,
+      playerMove: pending.playerMove,
+      timeMs: pending.timeMs,
+      moveStartedRemainingMs: pending.moveStartedRemainingMs,
+      moveEndedRemainingMs: pending.moveEndedRemainingMs,
+      cumulativeDecisionTimeMs: pending.cumulativeDecisionTimeMs,
+      fenAfterMove: pending.fenAfterMove,
+      evalAfterMoveCp: afterPlayer.cp,
+      evalAfterMoveMate: afterPlayer.mate,
+      terminalOutcomeAfterPlayer: afterPlayer.terminalOutcome,
       stockfishReply: null,
       fenAfterStockfish: null,
       evalAfterStockfishCp: null,
       evalAfterStockfishMate: null,
+      terminalOutcomeAfterStockfish: '',
     };
 
+    let currentAnalysis = afterPlayer;
     if (willContinue && !chess.game_over()) {
-      const sfBest = after.bestMoveUci;
-      if (isValidUci(sfBest)) {
-        const mvObj = chess.move({
-          from: sfBest.slice(0, 2),
-          to: sfBest.slice(2, 4),
-          promotion: sfBest.length === 5 ? sfBest[4] : undefined,
-        });
-        if (mvObj) {
-          record.stockfishReply = { san: mvObj.san, uci: sfBest };
-          record.fenAfterStockfish = chess.fen();
-          Board.setPosition(chess.fen());
-          // Skip analysis if Stockfish's reply ended the game (mate / draw) —
-          // analyzing a terminal position can hang the worker.
-          if (!chess.game_over()) {
-            const afterSf = await Engine.analyze(chess.fen());
-            record.evalAfterStockfishCp = afterSf.cp;
-            record.evalAfterStockfishMate = afterSf.mate;
-            evalBeforeMoveCp = afterSf.cp;
-            evalBeforeMoveMate = afterSf.mate;
-          } else {
-            evalBeforeMoveCp = null;
-            evalBeforeMoveMate = null;
-          }
-        }
+      if (!isValidUci(afterPlayer.bestMoveUci)) {
+        throw new Error('The chess engine did not return an opponent move. Please reload this page to retry.');
       }
+      const opponentMove = chess.move({
+        from: afterPlayer.bestMoveUci.slice(0, 2),
+        to: afterPlayer.bestMoveUci.slice(2, 4),
+        promotion: afterPlayer.bestMoveUci.length === 5 ? afterPlayer.bestMoveUci[4] : undefined,
+      });
+      if (!opponentMove) {
+        throw new Error('The chess engine returned an illegal opponent move. Please reload this page to retry.');
+      }
+      moveRecord.stockfishReply = { san: opponentMove.san, uci: afterPlayer.bestMoveUci };
+      moveRecord.fenAfterStockfish = chess.fen();
+      Board.setPosition(chess.fen());
+      currentAnalysis = await analyzePosition(chess);
+      moveRecord.evalAfterStockfishCp = currentAnalysis.cp;
+      moveRecord.evalAfterStockfishMate = currentAnalysis.mate;
+      moveRecord.terminalOutcomeAfterStockfish = currentAnalysis.terminalOutcome;
     }
 
-    puzzleRecord.moves.push(record);
-    moveIdx += 1;
+    puzzleRecord.moves.push(moveRecord);
+    puzzleRecord.pendingMove = null;
+    puzzleRecord.currentFen = chess.fen();
+    puzzleRecord.currentEvalCp = currentAnalysis.cp;
+    puzzleRecord.currentEvalMate = currentAnalysis.mate;
+    puzzleRecord.terminalOutcome = currentAnalysis.terminalOutcome;
+    moveIdx = puzzleRecord.moves.length;
+    persistActivePuzzle();
 
     if (moveIdx >= window.MOVES_PER_PUZZLE || chess.game_over()) {
-      await finishPuzzle();
-    } else {
-      setStatus('Your move.');
-      updateMoveCounter();
-      acceptingInput = true;
-      startTimer();
-    }
-  }
-
-  function sleep(ms) {
-    return new Promise(res => setTimeout(res, ms));
-  }
-
-  async function finishPuzzle() {
-    stopTimer();
-    acceptingInput = false;
-    Store.update(s => {
-      s.puzzles.push(puzzleRecord);
-      s.currentIdx += 1;
-    });
-    session = Store.load();
-
-    // Push this puzzle's moves to Google Sheets (fire-and-forget).
-    Sync.pushMoves(session, puzzleRecord).then(result => {
-      if (!result.ok && !result.skipped) {
-        console.warn('[Sync] puzzle not saved remotely', result);
-      }
-    });
-
-    // If the puzzle ended via game-over (checkmate / stalemate / draw),
-    // show a brief reason and auto-advance to the next puzzle.
-    if (chess.game_over && chess.game_over()) {
-      const playerLetter = puzzle.playerColor === 'white' ? 'w' : 'b';
-      let msg;
-      if (chess.in_checkmate && chess.in_checkmate()) {
-        msg = chess.turn() === playerLetter
-          ? 'Checkmate — you lost this one.'
-          : 'Checkmate — you won!';
-      } else if (chess.in_stalemate && chess.in_stalemate()) {
-        msg = 'Stalemate.';
-      } else if (chess.in_draw && chess.in_draw()) {
-        msg = 'Draw.';
-      } else {
-        msg = 'Puzzle ended.';
-      }
-      setStatus(msg + ' Moving to the next puzzle…');
-      await sleep(1500);
-      advance();
+      await finishPuzzle(chess.game_over() ? 'completed_terminal' : 'completed_horizon');
       return;
     }
 
+    setStatus('Your move.');
+    updateMoveCounter();
+    acceptingInput = true;
+    startDecisionClock();
+  }
+
+  function terminalEvaluation(position) {
+    if (!position.game_over()) return null;
+    if (position.in_checkmate()) {
+      const whiteMated = position.turn() === 'w';
+      return {
+        cp: whiteMated ? -10000 : 10000,
+        mate: whiteMated ? -1 : 1,
+        bestMoveUci: '(none)',
+        terminalOutcome: whiteMated ? 'white_checkmated' : 'black_checkmated',
+      };
+    }
+    let outcome = 'draw_other';
+    if (position.in_stalemate && position.in_stalemate()) outcome = 'draw_stalemate';
+    else if (position.in_threefold_repetition && position.in_threefold_repetition()) outcome = 'draw_threefold';
+    else if (position.insufficient_material && position.insufficient_material()) outcome = 'draw_insufficient_material';
+    return { cp: 0, mate: null, bestMoveUci: '(none)', terminalOutcome: outcome };
+  }
+
+  async function analyzePosition(position) {
+    const terminal = terminalEvaluation(position);
+    if (terminal) return terminal;
+    const result = await Engine.analyze(position.fen());
+    return { ...result, terminalOutcome: '' };
+  }
+
+  async function finishPuzzle(completionStatus) {
+    stopClockUi();
+    acceptingInput = false;
+    const remaining = Store.remainingDecisionMs(Store.load());
+    puzzleRecord.status = completionStatus;
+    puzzleRecord.endReason = completionStatus === 'completed_terminal'
+      ? (puzzleRecord.terminalOutcome || 'game_over')
+      : 'move_horizon_reached';
+    puzzleRecord.endedAt = Date.now();
+    puzzleRecord.completedBeforeTimeout = true;
+    puzzleRecord.puzzleEndedRemainingMs = remaining;
+    puzzleRecord.finalFen = puzzleRecord.currentFen;
+    puzzleRecord.finalEvalCp = puzzleRecord.currentEvalCp;
+    puzzleRecord.finalEvalMate = puzzleRecord.currentEvalMate;
+
+    session = Store.update(state => {
+      state.puzzles.push(puzzleRecord);
+      state.activePuzzle = null;
+      state.currentIdx += 1;
+    });
+    Sync.pushPuzzleData(session, puzzleRecord).then(result => {
+      if (!result.ok && !result.skipped) console.warn('[Sync] puzzle sync deferred', result);
+    });
+
+    if (completionStatus === 'completed_terminal') {
+      setStatus(`${terminalMessage(chess)} Moving to the next puzzle...`);
+      await sleep(1200);
+      advance();
+      return;
+    }
     setStatus('Puzzle complete.');
     els['next-button'].classList.remove('hidden');
   }
 
-  function advance() {
-    if (advancing) return;     // guard against double-click
-    advancing = true;
-    els['next-button'].classList.add('hidden');
-    loadNextPuzzle().finally(() => { advancing = false; });
+  function terminalMessage(position) {
+    const playerLetter = puzzle.playerColor === 'white' ? 'w' : 'b';
+    if (position.in_checkmate && position.in_checkmate()) {
+      return position.turn() === playerLetter ? 'Checkmate - you lost.' : 'Checkmate - you won.';
+    }
+    if (position.in_stalemate && position.in_stalemate()) return 'Stalemate.';
+    return 'Draw.';
   }
 
-  let puzzlesCompletedAt = null;
+  function advance() {
+    if (advancing || timingOut) return;
+    advancing = true;
+    els['next-button'].classList.add('hidden');
+    loadNextPuzzle()
+      .catch(handleFatalError)
+      .finally(() => { advancing = false; });
+  }
 
-  function finishSession() {
-    stopTimer();
+  async function expireTimeBudget() {
+    if (timingOut) return;
+    session = Store.load();
+    if (!session || session.taskStatus !== 'in_progress') return;
+    timingOut = true;
     acceptingInput = false;
-    puzzlesCompletedAt = Date.now();
-    Store.update(s => { s.puzzlesCompletedAt = puzzlesCompletedAt; });
+    clearSelection();
+    closePromotionModal();
+    stopClockUi();
+    Store.pauseDecisionTurn();
+    session = Store.load();
+    if (els.timer) els.timer.textContent = formatRemaining(0);
+    hideSignal();
+    setStatus('Time is up. Finalizing your chess results...');
+
+    const timeoutRecords = [];
+    if (session.activePuzzle) {
+      const active = session.activePuzzle;
+      active.status = 'timed_out';
+      active.endReason = 'total_time_budget_expired';
+      active.endedAt = Date.now();
+      active.completedBeforeTimeout = false;
+      active.puzzleEndedRemainingMs = 0;
+      active.finalFen = active.currentFen;
+      active.finalEvalCp = active.currentEvalCp;
+      active.finalEvalMate = active.currentEvalMate;
+      timeoutRecords.push(active);
+    }
+
+    const firstUnstartedIndex = session.currentIdx + (session.activePuzzle ? 1 : 0);
+    for (let index = firstUnstartedIndex; index < session.puzzleOrder.length; index += 1) {
+      const spec = PUZZLES.find(item => item.id === session.puzzleOrder[index]);
+      const signal = getSignalMove(spec, { bestMoveUci: spec.bestMove || '' });
+      timeoutRecords.push({
+        puzzleId: spec.id,
+        playerColor: spec.playerColor,
+        puzzleOrder: index + 1,
+        startFen: spec.startFen,
+        startEvalCp: null,
+        startEvalMate: null,
+        startBestMoveSan: signal.san,
+        startBestMoveUci: signal.uci,
+        startStockfishBestMoveUci: '',
+        status: 'not_started_timeout',
+        endReason: 'total_time_budget_expired_before_puzzle',
+        startedAt: null,
+        endedAt: Date.now(),
+        completedBeforeTimeout: false,
+        puzzleStartedRemainingMs: 0,
+        puzzleEndedRemainingMs: 0,
+        currentFen: spec.startFen,
+        currentEvalCp: null,
+        currentEvalMate: null,
+        terminalOutcome: '',
+        finalFen: spec.startFen,
+        finalEvalCp: null,
+        finalEvalMate: null,
+        pendingMove: null,
+        moves: [],
+      });
+    }
+
+    session = Store.update(state => {
+      state.puzzles.push(...timeoutRecords);
+      state.activePuzzle = null;
+      state.currentIdx = state.puzzleOrder.length;
+      state.taskStatus = 'timed_out';
+      state.decisionTimeUsedMs = state.totalDecisionTimeMs;
+      state.activeDecisionStartedAt = null;
+      state.chessTaskEndedAt = Date.now();
+    });
+    const timeoutSync = await Sync.pushPuzzlesData(session, timeoutRecords);
+    if (!timeoutSync.ok && !timeoutSync.skipped) {
+      console.warn('[Sync] timeout puzzle sync deferred', timeoutSync);
+    }
+    showSurvey();
+    timingOut = false;
+  }
+
+  function finishCompletedSession() {
+    stopClockUi();
+    acceptingInput = false;
+    session = Store.update(state => {
+      state.taskStatus = 'completed';
+      state.chessTaskEndedAt = Date.now();
+    });
+    showSurvey();
+  }
+
+  function showSurvey() {
+    session = Store.load();
     renderSurvey(session.participant.condition);
     els['experiment-ui'].classList.add('hidden');
+    els['finished-ui'].classList.add('hidden');
     els['survey-ui'].classList.remove('hidden');
+    if (els['survey-intro']) {
+      els['survey-intro'].textContent = session.taskStatus === 'timed_out'
+        ? 'The six-minute chess task has ended. Please answer the questions below to complete your participation.'
+        : 'You have completed the chess puzzles. Please answer the questions below to complete your participation.';
+    }
   }
 
   function renderSurvey(condition) {
     const container = els['survey-fields'];
     if (!container) return;
     container.innerHTML = '';
-    const questions = SURVEY_QUESTIONS.filter(q => !q.condition || q.condition === condition);
-
-    questions.forEach((question, idx) => {
+    const questions = SURVEY_QUESTIONS.filter(item => !item.condition || item.condition === condition);
+    questions.forEach((question, index) => {
       const fieldset = document.createElement('fieldset');
       fieldset.className = 'survey-field';
-
       const legend = document.createElement('legend');
       legend.className = 'survey-question';
-      legend.textContent = `${idx + 1}. ${question.text}`;
+      legend.textContent = `${index + 1}. ${question.text}`;
       fieldset.appendChild(legend);
-
       const options = document.createElement('div');
       options.className = 'survey-options';
       question.options.forEach(option => {
@@ -626,17 +754,14 @@ window.Game = (() => {
         const label = document.createElement('label');
         label.className = 'survey-option';
         label.setAttribute('for', id);
-
         const input = document.createElement('input');
         input.type = 'radio';
         input.id = id;
         input.name = question.name;
         input.value = option.value;
         input.required = true;
-
         const text = document.createElement('span');
         text.textContent = option.label;
-
         label.appendChild(input);
         label.appendChild(text);
         options.appendChild(label);
@@ -650,35 +775,57 @@ window.Game = (() => {
     if (els['survey-submit']) els['survey-submit'].disabled = true;
     if (els['survey-status']) {
       els['survey-status'].className = 'status';
-      els['survey-status'].textContent = 'Submitting…';
+      els['survey-status'].textContent = 'Submitting...';
     }
-    const state = Store.load();
-    const result = await Sync.pushSession(state, answers, state.puzzlesCompletedAt || puzzlesCompletedAt);
+    session = Store.update(state => {
+      state.surveyAnswers = answers;
+      state.dataQualityExclude = answers.q6 === 'yes';
+      state.dataQualityReason = answers.q6 === 'yes' ? 'reported_outside_help' : '';
+    });
+    const result = await Sync.flushSession(session, answers);
     if (!result.ok && !result.skipped) {
-      // Leave participant on the survey with an error so they can retry.
       if (els['survey-submit']) els['survey-submit'].disabled = false;
       if (els['survey-status']) {
         els['survey-status'].className = 'status error';
-        els['survey-status'].textContent = result.code === 'username_used'
-          ? 'This username has already been used, so this session cannot be submitted again. Please notify the experimenter.'
-          : 'Submission failed — please try again or notify the experimenter.';
+        els['survey-status'].textContent = 'Submission failed - please try again or notify the experimenter.';
       }
       return;
     }
-    els['survey-ui'].classList.add('hidden');
-    els['finished-ui'].classList.remove('hidden');
+    session = Store.update(state => { state.surveySubmittedAt = Date.now(); });
+    showFinished();
   }
 
-  // ---------- utils ----------
+  function showFinished() {
+    if (els['experiment-ui']) els['experiment-ui'].classList.add('hidden');
+    if (els['survey-ui']) els['survey-ui'].classList.add('hidden');
+    if (els['finished-ui']) els['finished-ui'].classList.remove('hidden');
+  }
 
-  function shuffle(arr) {
-    const a = [...arr];
-    for (let i = a.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [a[i], a[j]] = [a[j], a[i]];
+  function handleFatalError(error) {
+    console.error(error);
+    acceptingInput = false;
+    stopClockUi();
+    Store.pauseDecisionTurn();
+    setStatus(`Error: ${error.message || error}`);
+  }
+
+  function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  function shuffle(values) {
+    const result = [...values];
+    for (let index = result.length - 1; index > 0; index -= 1) {
+      const swapIndex = Math.floor(Math.random() * (index + 1));
+      [result[index], result[swapIndex]] = [result[swapIndex], result[index]];
     }
-    return a;
+    return result;
   }
 
-  return { start, advance, submitSurvey };
+  return {
+    start,
+    advance,
+    submitSurvey,
+    _test: { formatRemaining, terminalEvaluation, isValidUci },
+  };
 })();

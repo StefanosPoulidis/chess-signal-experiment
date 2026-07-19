@@ -7,8 +7,10 @@
 
 window.Engine = (() => {
   const STOCKFISH_URL = 'https://cdn.jsdelivr.net/npm/stockfish.js@10.0.2/stockfish.js';
-  const DEFAULT_DEPTH = 22;           // upper bound on search depth
-  const MAX_SEARCH_MS = 1300;         // hard cap: stop the search after 1.3s regardless of depth
+  // A fixed node budget gives every participant the same engine effort even
+  // when their device runs Stockfish at a different speed.
+  const SEARCH_NODES = 250000;
+  const HARD_TIMEOUT_MS = 20000;
 
   let worker = null;
   let listeners = [];
@@ -57,8 +59,8 @@ window.Engine = (() => {
       waitFor(l => l.startsWith('uciok') ? true : false),
       10000, 'uciok'
     );
-    // No UCI_LimitStrength — run Stockfish at full strength. Deterministic
-    // per position given the same depth.
+    // No UCI_LimitStrength - run Stockfish at full strength. The fixed node
+    // budget below standardizes search effort across participant devices.
     send('isready');
     await withTimeout(
       waitFor(l => l.startsWith('readyok') ? true : false),
@@ -72,7 +74,7 @@ window.Engine = (() => {
   //   mate: null for normal scores. For mate scores, signed half-move distance;
   //         positive = white delivers mate, negative = black delivers mate.
   //   bestMoveUci: Stockfish's best move in UCI format, or "(none)" if no moves.
-  async function analyze(fen, depth = DEFAULT_DEPTH) {
+  async function analyze(fen) {
     if (!worker) throw new Error('Engine not initialized');
     send('ucinewgame');
     send(`position fen ${fen}`);
@@ -91,17 +93,15 @@ window.Engine = (() => {
         resolve,
       };
       listeners.push(listenerRef);
-      // Search stops at whichever arrives first: `depth` plies or `movetime` ms.
-      send(`go depth ${depth} movetime ${MAX_SEARCH_MS}`);
+      send(`go nodes ${SEARCH_NODES}`);
     });
 
-    // Hard ceiling: if Stockfish doesn't return within MAX_SEARCH_MS + 3s,
-    // give up, detach the listener, and return a null result. Prevents a
-    // stuck worker from freezing the whole platform.
+    // Hard ceiling: stop a slow search and use the best move found so far.
+    // This prevents a slow device from freezing the whole platform.
     const bestMoveLine = await Promise.race([
       analysisPromise,
       new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('analyze timeout')), MAX_SEARCH_MS + 3000)
+        setTimeout(() => reject(new Error('analyze timeout')), HARD_TIMEOUT_MS)
       ),
     ]).catch(async err => {
       console.warn('[Engine] analyze timed out — detaching listener', err);
@@ -109,11 +109,10 @@ window.Engine = (() => {
       if (idx >= 0) listeners.splice(idx, 1);
       send('stop');
       // `stop` triggers Stockfish to emit the current search's bestmove.
-      // Swallow it here so it can't leak into the NEXT analyze call's
-      // listener. Bounded at 2s in case the engine is wedged.
+      // Capture it here so it cannot leak into the next analyze call.
       try {
-        await withTimeout(
-          waitFor(l => l.startsWith('bestmove ') ? true : false),
+        return await withTimeout(
+          waitFor(l => l.startsWith('bestmove ') ? l : false),
           2000, 'drain bestmove'
         );
       } catch { /* ignore */ }

@@ -17,17 +17,24 @@ const appsScript = read('apps-script/Code.js');
 assert(index.indexOf('js/config.js') < index.indexOf('js/sync.js'), 'login page must load config before sync');
 assert(index.indexOf('js/sync.js') < index.indexOf('js/app.js'), 'login page must load sync before app');
 
-assert(sync.includes('async function checkUsername'), 'Sync must expose a username availability check');
-assert(sync.includes("action: 'checkUsername'"), 'username check must call the server action');
-assert(sync.includes('checkUsername'), 'Sync return object must expose checkUsername');
+assert(sync.includes('function claimUsername'), 'Sync must expose an atomic username claim');
+assert(sync.includes("action: 'claimUsername'"), 'username claim must call the server action');
+assert(sync.includes('claimUsername'), 'Sync return object must expose claimUsername');
 
-assert(app.includes('Sync.checkUsername'), 'login must check server username availability before redirect');
+assert(app.includes('Sync.claimUsername'), 'login must claim the username before redirect');
 assert(app.includes('already been used'), 'login must show a clear already-used message');
+assert(app.includes('function recoverLocalSession'), 'login must recover an unfinished local session');
+assert(app.includes("localStorage.getItem('chess-signal-session')"), 'resume must use the persisted experiment session');
+assert(app.includes('resumableParticipant.sessionId'), 'resume must reclaim the original server session id');
+assert(app.includes('!saved.surveySubmittedAt'), 'an unsubmitted post-study survey must remain resumable');
+assert(!app.includes("saved.taskStatus !== 'completed'"), 'finishing the chess task must not block survey recovery');
 
 assert(appsScript.includes("USED_USERNAMES_TAB = 'used_usernames'"), 'Apps Script must define a used_usernames tab');
-assert(appsScript.includes('LockService.getScriptLock'), 'session submit must use a script lock');
+assert(appsScript.includes('LockService.getScriptLock'), 'username claim and data append must use a script lock');
 assert(appsScript.includes("code: 'username_used'"), 'duplicate final submissions must return username_used');
-assert(appsScript.includes("action === 'checkUsername'"), 'Apps Script must handle checkUsername action');
-assert(appsScript.includes("action === 'backfillUsedUsernames'"), 'Apps Script must support backfilling existing sessions');
+assert(appsScript.includes("data.action === 'checkUsername'"), 'Apps Script must handle checkUsername action');
+assert(appsScript.includes("data.action === 'claimUsername'"), 'Apps Script must handle claimUsername action');
+assert(appsScript.includes("data.action === 'backfillUsedUsernames'"), 'Apps Script must support backfilling existing sessions');
+assert(appsScript.includes('session does not own username claim'), 'data writes must belong to the claimed session');
 
 console.log('username lock contract ok');
