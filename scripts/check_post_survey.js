@@ -18,7 +18,7 @@ const requiredQuestions = [
   'Before making my first move, I tried to understand the idea of the position and plan what I would do next.',
   'After making the first move, I often felt lost in the continuation.',
   'The first move sometimes led to positions that were harder to continue than I expected.',
-  'The six-minute total time budget affected how I allocated my time across moves and puzzles.',
+  'The 75-second time limit affected my decisions.',
   'Did you use any outside help while completing the chess task, such as a chess engine, chess website, book, coach, parent, friend, or any other assistance?',
   'When I was shown the recommended move, I followed it even if I did not fully understand why it was good.',
   'Because I was told there was a unique best move, I looked more carefully than I would in a normal game.',
@@ -28,6 +28,7 @@ const removedQuestions = [
   'The signal I received was useful for helping me make decisions.',
   'When I was told there was a uniquely optimal move, I searched more carefully than I otherwise would have.',
   'The one-minute time limit affected my decisions.',
+  'The six-minute total time budget affected how I allocated my time across moves and puzzles.',
   'I completed the chess task without using outside help, such as a chess engine, chess website, book, coach, parent, friend, or any other assistance.',
 ];
 

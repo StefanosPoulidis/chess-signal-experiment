@@ -1,7 +1,7 @@
 'use strict';
 
-// Experiment flow: six randomized puzzles, a persistent six-minute active
-// decision-time budget, condition-specific first-move signals, and survey sync.
+// Experiment flow: six randomized puzzles, independent 75-second active
+// decision timers, condition-specific first-move signals, and survey sync.
 
 window.Game = (() => {
   const els = {};
@@ -49,7 +49,7 @@ window.Game = (() => {
     },
     {
       name: 'q4',
-      text: 'The six-minute total time budget affected how I allocated my time across moves and puzzles.',
+      text: 'The 75-second time limit affected my decisions.',
       options: LIKERT_OPTIONS,
     },
     {
@@ -84,10 +84,15 @@ window.Game = (() => {
     }
     const participant = JSON.parse(participantRaw);
     const existing = Store.load();
-    const canResume = existing &&
+    const sameClaim = existing &&
+      existing.participant &&
       existing.participant.username === participant.username &&
-      existing.sessionId === participant.sessionId &&
-      existing.experimentVersion === config().experimentVersion;
+      existing.sessionId === participant.sessionId;
+    if (sameClaim && existing.experimentVersion !== config().experimentVersion) {
+      setStatus('This session was started under an earlier study version. Please contact the experimenter.');
+      return;
+    }
+    const canResume = sameClaim && existing.experimentVersion === config().experimentVersion;
 
     const puzzleOrder = config().localSmokeTest
       ? PUZZLES.map(item => item.id)
@@ -108,8 +113,8 @@ window.Game = (() => {
     setStatus('Loading engine...');
     await Engine.init();
 
-    if (Store.remainingDecisionMs(session) <= 0) {
-      await expireTimeBudget();
+    if (session.activePuzzle && Store.remainingDecisionMs(session) <= 0) {
+      await expirePuzzleTime();
     } else if (session.activePuzzle) {
       await resumeActivePuzzle();
     } else {
@@ -143,10 +148,10 @@ window.Game = (() => {
     if (els.timer) els.timer.textContent = formatRemaining(remaining);
     const clock = els.timer ? els.timer.closest('.chess-clock') : null;
     if (clock) {
-      clock.classList.toggle('clock-warning', remaining > 0 && remaining <= 60000);
+      clock.classList.toggle('clock-warning', remaining > 0 && remaining <= 15000);
       clock.classList.toggle('clock-expired', remaining <= 0);
     }
-    if (remaining <= 0 && acceptingInput) expireTimeBudget();
+    if (remaining <= 0 && acceptingInput) expirePuzzleTime();
   }
 
   function stopClockUi() {
@@ -162,12 +167,12 @@ window.Game = (() => {
     session = timing.state;
     puzzleRecord = session.activePuzzle;
     if (!timing.started || timing.remainingMs <= 0) {
-      expireTimeBudget();
+      expirePuzzleTime();
       return false;
     }
     renderClock();
     timerInterval = setInterval(renderClock, 100);
-    timerDeadline = setTimeout(expireTimeBudget, timing.remainingMs + 25);
+    timerDeadline = setTimeout(expirePuzzleTime, timing.remainingMs + 25);
     return true;
   }
 
@@ -186,11 +191,6 @@ window.Game = (() => {
       finishCompletedSession();
       return;
     }
-    if (Store.remainingDecisionMs(session) <= 0) {
-      await expireTimeBudget();
-      return;
-    }
-
     const puzzleId = session.puzzleOrder[session.currentIdx];
     puzzle = PUZZLES.find(item => item.id === puzzleId);
     chess = new Chess(puzzle.startFen);
@@ -219,6 +219,7 @@ window.Game = (() => {
       completedBeforeTimeout: null,
       puzzleStartedRemainingMs: remaining,
       puzzleEndedRemainingMs: null,
+      decisionTimeUsedMs: 0,
       currentFen: puzzle.startFen,
       currentEvalCp: startAnalysis.cp,
       currentEvalMate: startAnalysis.mate,
@@ -388,7 +389,7 @@ window.Game = (() => {
   function attemptMove(source, target, pieceString) {
     session = Store.load();
     if (Store.remainingDecisionMs(session) <= 0) {
-      expireTimeBudget();
+      expirePuzzleTime();
       return false;
     }
     if (isPromotionMove(source, target, pieceString)) {
@@ -633,10 +634,10 @@ window.Game = (() => {
       .finally(() => { advancing = false; });
   }
 
-  async function expireTimeBudget() {
+  async function expirePuzzleTime() {
     if (timingOut) return;
     session = Store.load();
-    if (!session || session.taskStatus !== 'in_progress') return;
+    if (!session || session.taskStatus !== 'in_progress' || !session.activePuzzle) return;
     timingOut = true;
     acceptingInput = false;
     clearSelection();
@@ -646,77 +647,39 @@ window.Game = (() => {
     session = Store.load();
     if (els.timer) els.timer.textContent = formatRemaining(0);
     hideSignal();
-    setStatus('Time is up. Finalizing your chess results...');
+    setStatus('Time is up for this puzzle. Moving to the next puzzle...');
 
-    const timeoutRecords = [];
-    if (session.activePuzzle) {
-      const active = session.activePuzzle;
-      active.status = 'timed_out';
-      active.endReason = 'total_time_budget_expired';
-      active.endedAt = Date.now();
-      active.completedBeforeTimeout = false;
-      active.puzzleEndedRemainingMs = 0;
-      active.finalFen = active.currentFen;
-      active.finalEvalCp = active.currentEvalCp;
-      active.finalEvalMate = active.currentEvalMate;
-      timeoutRecords.push(active);
-    }
-
-    const firstUnstartedIndex = session.currentIdx + (session.activePuzzle ? 1 : 0);
-    for (let index = firstUnstartedIndex; index < session.puzzleOrder.length; index += 1) {
-      const spec = PUZZLES.find(item => item.id === session.puzzleOrder[index]);
-      const signal = getSignalMove(spec, { bestMoveUci: spec.bestMove || '' });
-      timeoutRecords.push({
-        puzzleId: spec.id,
-        playerColor: spec.playerColor,
-        puzzleOrder: index + 1,
-        startFen: spec.startFen,
-        startEvalCp: null,
-        startEvalMate: null,
-        startBestMoveSan: signal.san,
-        startBestMoveUci: signal.uci,
-        startStockfishBestMoveUci: '',
-        status: 'not_started_timeout',
-        endReason: 'total_time_budget_expired_before_puzzle',
-        startedAt: null,
-        endedAt: Date.now(),
-        completedBeforeTimeout: false,
-        puzzleStartedRemainingMs: 0,
-        puzzleEndedRemainingMs: 0,
-        currentFen: spec.startFen,
-        currentEvalCp: null,
-        currentEvalMate: null,
-        terminalOutcome: '',
-        finalFen: spec.startFen,
-        finalEvalCp: null,
-        finalEvalMate: null,
-        pendingMove: null,
-        moves: [],
-      });
-    }
+    const timedOutPuzzle = session.activePuzzle;
+    timedOutPuzzle.status = 'timed_out';
+    timedOutPuzzle.endReason = 'puzzle_time_limit_expired';
+    timedOutPuzzle.endedAt = Date.now();
+    timedOutPuzzle.completedBeforeTimeout = false;
+    timedOutPuzzle.puzzleEndedRemainingMs = 0;
+    timedOutPuzzle.finalFen = timedOutPuzzle.currentFen;
+    timedOutPuzzle.finalEvalCp = timedOutPuzzle.currentEvalCp;
+    timedOutPuzzle.finalEvalMate = timedOutPuzzle.currentEvalMate;
 
     session = Store.update(state => {
-      state.puzzles.push(...timeoutRecords);
+      state.puzzles.push(timedOutPuzzle);
       state.activePuzzle = null;
-      state.currentIdx = state.puzzleOrder.length;
-      state.taskStatus = 'timed_out';
-      state.decisionTimeUsedMs = state.totalDecisionTimeMs;
+      state.currentIdx += 1;
       state.activeDecisionStartedAt = null;
-      state.chessTaskEndedAt = Date.now();
     });
-    const timeoutSync = await Sync.pushPuzzlesData(session, timeoutRecords);
-    if (!timeoutSync.ok && !timeoutSync.skipped) {
-      console.warn('[Sync] timeout puzzle sync deferred', timeoutSync);
-    }
-    showSurvey();
+    Sync.pushPuzzleData(session, timedOutPuzzle).then(result => {
+      if (!result.ok && !result.skipped) console.warn('[Sync] timeout puzzle sync deferred', result);
+    });
+    await sleep(1200);
     timingOut = false;
+    advance();
   }
 
   function finishCompletedSession() {
     stopClockUi();
     acceptingInput = false;
     session = Store.update(state => {
-      state.taskStatus = 'completed';
+      state.taskStatus = state.puzzles.some(item => item.status === 'timed_out')
+        ? 'completed_with_timeouts'
+        : 'completed';
       state.chessTaskEndedAt = Date.now();
     });
     showSurvey();
@@ -729,9 +692,7 @@ window.Game = (() => {
     els['finished-ui'].classList.add('hidden');
     els['survey-ui'].classList.remove('hidden');
     if (els['survey-intro']) {
-      els['survey-intro'].textContent = session.taskStatus === 'timed_out'
-        ? 'The six-minute chess task has ended. Please answer the questions below to complete your participation.'
-        : 'You have completed the chess puzzles. Please answer the questions below to complete your participation.';
+      els['survey-intro'].textContent = 'You have completed the chess puzzles. Please answer the questions below to complete your participation.';
     }
   }
 

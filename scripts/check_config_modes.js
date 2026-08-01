@@ -19,16 +19,16 @@ function loadConfig(hostname, search) {
 
 const production = loadConfig('stefanospoulidis.github.io', '?smoke=timeout');
 if (production.skipSync) throw new Error('production must never disable sync from a query parameter');
-if (production.totalDecisionTimeMs !== 360000) throw new Error('production budget must remain six minutes');
+if (production.puzzleDecisionTimeMs !== 75000) throw new Error('production limit must be 75 seconds per puzzle');
 if (production.syncTimeoutMs !== 20000) throw new Error('production sync must have a bounded timeout');
 
 const timeout = loadConfig('127.0.0.1', '?smoke=timeout');
-if (!timeout.skipSync || timeout.totalDecisionTimeMs !== 8000) {
+if (!timeout.skipSync || timeout.puzzleDecisionTimeMs !== 8000) {
   throw new Error('local timeout smoke mode is misconfigured');
 }
 
 const move = loadConfig('localhost', '?smoke=move');
-if (!move.skipSync || move.totalDecisionTimeMs !== 360000) {
+if (!move.skipSync || move.puzzleDecisionTimeMs !== 75000) {
   throw new Error('local move smoke mode is misconfigured');
 }
 

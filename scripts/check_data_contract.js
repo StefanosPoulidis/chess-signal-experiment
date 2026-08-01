@@ -16,9 +16,10 @@ const state = {
   participant: { username: 'test-user-001', condition: 'act' },
   startedAt: 1000,
   chessTaskEndedAt: 361000,
-  taskStatus: 'timed_out',
-  totalDecisionTimeMs: 360000,
-  decisionTimeUsedMs: 360000,
+  taskStatus: 'completed_with_timeouts',
+  puzzleDecisionTimeMs: 75000,
+  totalDecisionTimeMs: 450000,
+  decisionTimeUsedMs: 75000,
   puzzleOrder: [4, 1, 2, 3, 5, 6],
   puzzles: [],
 };
@@ -28,9 +29,9 @@ const puzzle = {
   playerColor: 'black',
   startFen: 'test fen',
   status: 'timed_out',
-  endReason: 'total_time_budget_expired',
+  endReason: 'puzzle_time_limit_expired',
   completedBeforeTimeout: false,
-  puzzleStartedRemainingMs: 360000,
+  puzzleStartedRemainingMs: 75000,
   puzzleEndedRemainingMs: 0,
   startEvalCp: 200,
   startEvalMate: null,
@@ -47,8 +48,8 @@ const puzzle = {
     evalBeforeMoveMate: null,
     playerMove: { san: 'Rxh4', uci: 'c4h4' },
     timeMs: 1200,
-    moveStartedRemainingMs: 360000,
-    moveEndedRemainingMs: 358800,
+    moveStartedRemainingMs: 75000,
+    moveEndedRemainingMs: 73800,
     cumulativeDecisionTimeMs: 1200,
     fenAfterMove: 'after',
     evalAfterMoveCp: 350,
@@ -77,12 +78,18 @@ const syncSource = fs.readFileSync(path.join(__dirname, '..', 'js', 'sync.js'), 
 const gameSource = fs.readFileSync(path.join(__dirname, '..', 'js', 'game.js'), 'utf8');
 const engineSource = fs.readFileSync(path.join(__dirname, '..', 'js', 'engine.js'), 'utf8');
 const timeoutSource = gameSource.slice(
-  gameSource.indexOf('async function expireTimeBudget'),
+  gameSource.indexOf('async function expirePuzzleTime'),
   gameSource.indexOf('function finishCompletedSession')
 );
 if (!syncSource.includes('function pushPuzzlesData')) throw new Error('puzzle sync must support batching');
-if (!timeoutSource.includes('Sync.pushPuzzlesData')) throw new Error('timeout records must be synced before the survey');
-if (timeoutSource.includes('await analyzePosition')) throw new Error('timeout finalization must not run six new engine searches');
+if (!gameSource.includes('This session was started under an earlier study version.')) {
+  throw new Error('protocol-version changes must not silently overwrite an in-progress session');
+}
+if (!timeoutSource.includes('Sync.pushPuzzleData')) throw new Error('timed-out puzzle must be synced');
+if (!timeoutSource.includes('state.currentIdx += 1')) throw new Error('timeout must advance by exactly one puzzle');
+if (timeoutSource.includes('state.currentIdx = state.puzzleOrder.length')) throw new Error('one timeout must not end the chess task');
+if (timeoutSource.includes('not_started_timeout')) throw new Error('later puzzles must remain available after a timeout');
+if (timeoutSource.includes('await analyzePosition')) throw new Error('timeout finalization must not run a new engine search');
 if (!engineSource.includes("waitFor(l => l.startsWith('bestmove ') ? l : false)")) {
   throw new Error('engine timeout must retain the best move found before stop');
 }

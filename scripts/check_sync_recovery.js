@@ -10,12 +10,12 @@ function makePuzzle(id) {
     puzzleOrder: id,
     playerColor: id <= 4 ? 'white' : 'black',
     startFen: `test-fen-${id}`,
-    status: 'not_started_timeout',
+    status: 'timed_out',
     endReason: 'test_timeout',
     startedAt: null,
     endedAt: Date.now(),
     completedBeforeTimeout: false,
-    puzzleStartedRemainingMs: 0,
+    puzzleStartedRemainingMs: 75000,
     puzzleEndedRemainingMs: 0,
     startEvalCp: null,
     startEvalMate: null,
@@ -37,9 +37,10 @@ const state = {
   schemaVersion: 2,
   startedAt: Date.now(),
   chessTaskEndedAt: Date.now(),
-  taskStatus: 'timed_out',
-  totalDecisionTimeMs: 360000,
-  decisionTimeUsedMs: 360000,
+  taskStatus: 'completed_with_timeouts',
+  puzzleDecisionTimeMs: 75000,
+  totalDecisionTimeMs: 450000,
+  decisionTimeUsedMs: 450000,
   puzzleOrder: [1, 2, 3, 4, 5, 6],
   puzzles: [1, 2, 3, 4, 5, 6].map(makePuzzle),
 };
@@ -83,7 +84,7 @@ function assert(condition, message) {
   });
   const successResult = await successful.Sync.flushSession(state, { q6: 'no' });
   assert(successResult.ok, 'a complete server receipt must finish submission');
-  assert(successful.requests.length === 2, 'zero-move timeout session should write puzzles and session');
+  assert(successful.requests.length === 2, 'six timed-out puzzles should write puzzles and session');
 
   const missingReceipt = loadSync(async payload => {
     if (payload.dataset === 'sessions') return { ok: true, appended: 1, skippedExisting: 0 };

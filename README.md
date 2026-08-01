@@ -12,9 +12,9 @@ Interactive web platform for a between-participants experiment testing
   - `att` — banner: *"There is a unique optimal move here!"*
   - `act` — banner: *"Best move: <SAN>"* + arrow drawn on the board
 - Signal is shown **only on the starting position** (first player move); from move 2 on, the board is clean.
-- Participants share a six-minute active decision-time budget across all six puzzles. The clock pauses during Stockfish computation and puzzle transitions.
-- The clock and in-progress puzzle state persist across refreshes. At expiration, the current and remaining puzzles receive explicit timeout records.
-- Data include participant-puzzle outcomes, per-move timing and evaluations, total remaining time, terminal outcomes, timeout status, and the final survey.
+- Each puzzle has its own 75-second active decision-time countdown. The clock pauses during Stockfish computation and puzzle transitions, and unused time never carries over.
+- The clock and in-progress puzzle state persist across refreshes. At expiration, only the current puzzle receives a timeout record; the next puzzle starts with a fresh 75 seconds.
+- Data include participant-puzzle outcomes, per-move timing and evaluations, per-puzzle remaining time, terminal outcomes, timeout status, and the final survey.
 
 ## Architecture
 
@@ -28,11 +28,11 @@ Interactive web platform for a between-participants experiment testing
 
 - Treatment assignment is external. Each pre-assigned username maps to `att` or `act`.
 - Puzzle order is randomized in the browser and retained for the full session.
-- The shared clock runs only while the participant can legally decide on a move.
-- Each puzzle ends after five participant moves, a terminal chess position, or expiration of the shared budget.
+- Each independent countdown runs only while the participant can legally decide on a move.
+- Each puzzle ends after five participant moves, a terminal chess position, or expiration of its own 75-second limit. A timeout does not prevent the participant from attempting the remaining puzzles.
 - Evaluations are stored from White's perspective and from the participant's perspective.
 - `Yes` to the direct outside-help question sets `data_quality_exclude=true` and `data_quality_reason=reported_outside_help`.
-- The current protocol/data version is `2026-07-19-total-budget-v1` with schema version `2`.
+- The current protocol/data version is `2026-08-01-independent-75s-v1` with schema version `2`.
 
 ## Local development
 
@@ -44,13 +44,16 @@ python3 -m http.server 8000
 Local smoke modes use deterministic puzzle order and never write to the
 production spreadsheet:
 
-- `http://localhost:8000/?smoke=timeout` uses an eight-second budget.
-- `http://localhost:8000/?smoke=move` uses the full six-minute budget.
+- `http://localhost:8000/?smoke=timeout` uses eight seconds per puzzle.
+- `http://localhost:8000/?smoke=move` uses the production 75 seconds per puzzle.
 
 ## Data storage (Google Sheets via Apps Script)
 
 Participant-puzzle records, moves, and the final session/survey row are POSTed
 to a Google Apps Script Web App. Stable record IDs make retries idempotent.
+The legacy session-level budget fields now report the aggregate of the six
+independent allocations; they do not indicate that participants can transfer
+unused time between puzzles. Per-puzzle start/end balances remain canonical.
 
 **One-time setup:**
 

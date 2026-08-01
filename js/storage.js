@@ -1,6 +1,6 @@
 'use strict';
 
-// Persistent experiment state and decision-clock accounting.
+// Persistent experiment state and independent per-puzzle clock accounting.
 
 window.Store = (() => {
   const KEY = 'chess-signal-session';
@@ -20,6 +20,7 @@ window.Store = (() => {
 
   function init(participant, puzzleOrder, config) {
     const c = config || {};
+    const puzzleDecisionTimeMs = c.puzzleDecisionTimeMs || 75 * 1000;
     const state = {
       schemaVersion: c.schemaVersion || 2,
       experimentVersion: c.experimentVersion || 'unknown',
@@ -31,7 +32,9 @@ window.Store = (() => {
       chessTaskEndedAt: null,
       surveySubmittedAt: null,
       taskStatus: 'in_progress',
-      totalDecisionTimeMs: c.totalDecisionTimeMs || 6 * 60 * 1000,
+      puzzleDecisionTimeMs,
+      // This aggregate is exported for analysis; puzzle allocations cannot be shared.
+      totalDecisionTimeMs: puzzleDecisionTimeMs * puzzleOrder.length,
       decisionTimeUsedMs: 0,
       activeDecisionStartedAt: null,
       activePuzzle: null,
@@ -44,16 +47,24 @@ window.Store = (() => {
   function remainingDecisionMs(state, now) {
     if (!state) return 0;
     const at = now === undefined ? Date.now() : now;
+    const puzzleBudget = state.puzzleDecisionTimeMs || 75 * 1000;
+    const puzzleUsed = state.activePuzzle
+      ? Math.max(0, Number(state.activePuzzle.decisionTimeUsedMs) || 0)
+      : 0;
     const activeMs = state.activeDecisionStartedAt === null
       ? 0
       : Math.max(0, at - state.activeDecisionStartedAt);
-    return Math.max(0, state.totalDecisionTimeMs - state.decisionTimeUsedMs - activeMs);
+    return Math.max(0, puzzleBudget - puzzleUsed - activeMs);
   }
 
   function beginDecisionTurn(now) {
     const at = now === undefined ? Date.now() : now;
     let result;
     const state = update(s => {
+      if (!s.activePuzzle) {
+        result = { started: false, remainingMs: 0 };
+        return;
+      }
       const remaining = remainingDecisionMs(s, at);
       if (remaining <= 0) {
         result = { started: false, remainingMs: 0 };
@@ -83,11 +94,17 @@ window.Store = (() => {
       cumulativeDecisionTimeMs: 0,
     };
     const state = update(s => {
-      if (s.activeDecisionStartedAt !== null) {
-        const availableAtStart = Math.max(0, s.totalDecisionTimeMs - s.decisionTimeUsedMs);
+      if (s.activePuzzle && s.activeDecisionStartedAt !== null) {
+        const puzzleBudget = s.puzzleDecisionTimeMs || 75 * 1000;
+        const puzzleUsed = Math.max(0, Number(s.activePuzzle.decisionTimeUsedMs) || 0);
+        const availableAtStart = Math.max(0, puzzleBudget - puzzleUsed);
         const elapsed = Math.min(
           availableAtStart,
           Math.max(0, at - s.activeDecisionStartedAt)
+        );
+        s.activePuzzle.decisionTimeUsedMs = Math.min(
+          puzzleBudget,
+          puzzleUsed + elapsed
         );
         s.decisionTimeUsedMs = Math.min(
           s.totalDecisionTimeMs,

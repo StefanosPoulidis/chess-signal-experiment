@@ -12,14 +12,15 @@ const LOCAL_SMOKE_TEST = Boolean(
 
 window.CONFIG = {
   // Version every substantive protocol or data-schema change.
-  experimentVersion: '2026-07-19-total-budget-v1',
+  experimentVersion: '2026-08-01-independent-75s-v1',
   schemaVersion: 2,
 
-  // The clock runs only while the participant can make a move. Engine
-  // computation and puzzle transitions are excluded from this budget.
-  totalDecisionTimeMs: LOCAL_SMOKE_TEST && LOCAL_SMOKE_MODE === 'timeout'
+  // Each puzzle has an independent active decision-time budget. Engine
+  // computation and puzzle transitions are excluded, and unused time does not
+  // carry over to the next puzzle.
+  puzzleDecisionTimeMs: LOCAL_SMOKE_TEST && LOCAL_SMOKE_MODE === 'timeout'
     ? 8 * 1000
-    : 6 * 60 * 1000,
+    : 75 * 1000,
   localSmokeTest: LOCAL_SMOKE_TEST,
 
   // Apps Script Web App URL.
