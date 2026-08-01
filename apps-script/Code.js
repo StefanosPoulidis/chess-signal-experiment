@@ -18,6 +18,11 @@ const DATASET_SCHEMAS = {
       'puzzle_order_played', 'survey_q1', 'survey_q2', 'survey_q3', 'survey_q4',
       'survey_q5_removed', 'survey_q6_outside_help_used',
       'survey_q7_condition_specific', 'data_quality_exclude', 'data_quality_reason',
+      'evaluation_engine_name', 'evaluation_engine_reported_name',
+      'evaluation_engine_version', 'evaluation_engine_package_version',
+      'evaluation_engine_build', 'evaluation_search_mode', 'evaluation_search_value',
+      'scoring_method_version', 'win_percentage_slope', 'move_accuracy_scale',
+      'move_accuracy_decay', 'move_accuracy_offset',
     ],
   },
   puzzles: {
@@ -33,6 +38,15 @@ const DATASET_SCHEMAS = {
       'final_eval_cp_white', 'final_eval_cp_participant', 'final_eval_mate_white',
       'terminal_outcome', 'first_move_san', 'first_move_uci',
       'followed_action_recommendation',
+      'start_win_percentage_white', 'start_win_percentage_participant',
+      'start_win_probability_white', 'start_win_probability_participant',
+      'final_win_percentage_white', 'final_win_percentage_participant',
+      'final_win_probability_white', 'final_win_probability_participant',
+      'cp_change_start_to_final_participant',
+      'win_percentage_change_start_to_final_participant',
+      'win_probability_change_start_to_final_participant',
+      'evaluation_engine_version', 'evaluation_engine_package_version',
+      'evaluation_engine_build', 'evaluation_search_depth', 'scoring_method_version',
     ],
   },
   moves: {
@@ -51,12 +65,26 @@ const DATASET_SCHEMAS = {
       'cumulative_decision_time_ms', 'eval_before_move_participant_cp',
       'eval_after_move_participant_cp', 'eval_after_stockfish_participant_cp',
       'terminal_outcome_after_player', 'terminal_outcome_after_stockfish',
+      'win_percentage_before_move_white', 'win_percentage_before_move_participant',
+      'win_probability_before_move_white', 'win_probability_before_move_participant',
+      'win_percentage_after_move_white', 'win_percentage_after_move_participant',
+      'win_probability_after_move_white', 'win_probability_after_move_participant',
+      'win_percentage_after_stockfish_white',
+      'win_percentage_after_stockfish_participant',
+      'win_probability_after_stockfish_white',
+      'win_probability_after_stockfish_participant',
+      'cp_change_participant', 'win_percentage_change_participant',
+      'win_probability_change_participant', 'win_percentage_loss_participant',
+      'move_accuracy_raw', 'move_accuracy', 'move_accuracy_valid',
+      'move_accuracy_invalid_reason', 'evaluation_engine_version',
+      'evaluation_engine_package_version', 'evaluation_engine_build',
+      'evaluation_search_depth', 'scoring_method_version',
     ],
   },
 };
 
 function doGet() {
-  return out({ ok: true, service: 'chess-signal-experiment', schemaVersion: 2 });
+  return out({ ok: true, service: 'chess-signal-experiment', schemaVersion: 3 });
 }
 
 function doPost(e) {
@@ -366,9 +394,15 @@ function ensureDatasetSheet_(ss, name, headers) {
     sheet.setFrozenRows(1);
     return sheet;
   }
-  const actual = sheet.getRange(1, 1, 1, headers.length).getValues()[0].map(String);
-  if (actual.join('\u001f') !== headers.join('\u001f')) {
+  const currentWidth = sheet.getLastColumn();
+  const actual = sheet.getRange(1, 1, 1, currentWidth).getValues()[0].map(String);
+  if (currentWidth > headers.length ||
+      actual.join('\u001f') !== headers.slice(0, currentWidth).join('\u001f')) {
     throw new Error(`schema mismatch in ${name}`);
+  }
+  if (currentWidth < headers.length) {
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    sheet.setFrozenRows(1);
   }
   return sheet;
 }
@@ -440,22 +474,40 @@ function handleBackfillUsedUsernames_() {
   return out({ ok: true, appended: 0 });
 }
 
-// Run once from the Apps Script editor when upgrading the original workbook.
-// It preserves legacy test rows, labels their protocol version, and installs
-// the canonical v2 schemas. The function is idempotent.
-function migrateToSchemaV2() {
+// Run once from the Apps Script editor before deploying schema v3. Existing
+// response columns and rows are preserved; new scoring columns are appended.
+function migrateToSchemaV3() {
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try {
     const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-    migrateSessions_(ss);
-    migrateMoves_(ss);
-    migrateUsedUsernames_(ss);
-    ensureDatasetSheet_(ss, 'puzzles', DATASET_SCHEMAS.puzzles.headers);
-    return { ok: true, schemaVersion: 2 };
+    Object.keys(DATASET_SCHEMAS).forEach(name => {
+      extendDatasetSchema_(ss, name, DATASET_SCHEMAS[name].headers);
+    });
+    ensureUsedUsernamesSheet_(ss);
+    return { ok: true, schemaVersion: 3 };
   } finally {
     lock.releaseLock();
   }
+}
+
+function extendDatasetSchema_(ss, name, targetHeaders) {
+  const sheet = ss.getSheetByName(name);
+  if (!sheet || sheet.getLastRow() === 0) {
+    ensureDatasetSheet_(ss, name, targetHeaders);
+    return;
+  }
+  const currentHeaders = sheet.getRange(1, 1, 1, sheet.getLastColumn())
+    .getValues()[0].map(String);
+  if (currentHeaders.length > targetHeaders.length ||
+      currentHeaders.join('\u001f') !== targetHeaders.slice(0, currentHeaders.length).join('\u001f')) {
+    throw new Error(`cannot append schema v3 columns: unrecognized schema in ${name}`);
+  }
+  if (sheet.getMaxColumns() < targetHeaders.length) {
+    sheet.insertColumnsAfter(sheet.getMaxColumns(), targetHeaders.length - sheet.getMaxColumns());
+  }
+  sheet.getRange(1, 1, 1, targetHeaders.length).setValues([targetHeaders]);
+  sheet.setFrozenRows(1);
 }
 
 // Run from the Apps Script editor before launch if preallocated capacity is

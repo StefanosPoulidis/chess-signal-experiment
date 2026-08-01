@@ -22,7 +22,7 @@ window.Store = (() => {
     const c = config || {};
     const puzzleDecisionTimeMs = c.puzzleDecisionTimeMs || 75 * 1000;
     const state = {
-      schemaVersion: c.schemaVersion || 2,
+      schemaVersion: c.schemaVersion || 3,
       experimentVersion: c.experimentVersion || 'unknown',
       sessionId: participant.sessionId,
       participant,
@@ -38,6 +38,8 @@ window.Store = (() => {
       decisionTimeUsedMs: 0,
       activeDecisionStartedAt: null,
       activePuzzle: null,
+      engineMetadata: null,
+      scoringMetadata: null,
       puzzles: [],
     };
     save(state);

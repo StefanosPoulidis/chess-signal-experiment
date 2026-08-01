@@ -34,7 +34,7 @@ const state = {
   participant: { username: 'test-user', condition: 'att' },
   sessionId: 'session-1',
   experimentVersion: 'test-version',
-  schemaVersion: 2,
+  schemaVersion: 3,
   startedAt: Date.now(),
   chessTaskEndedAt: Date.now(),
   taskStatus: 'completed_with_timeouts',
@@ -42,6 +42,10 @@ const state = {
   totalDecisionTimeMs: 450000,
   decisionTimeUsedMs: 450000,
   puzzleOrder: [1, 2, 3, 4, 5, 6],
+  engineMetadata: {
+    name: 'Stockfish', version: '18', packageVersion: '18.0.8',
+    build: 'lite-single-wasm', searchMode: 'depth', searchValue: 20,
+  },
   puzzles: [1, 2, 3, 4, 5, 6].map(makePuzzle),
 };
 
@@ -67,6 +71,7 @@ function loadSync(responseForPayload) {
     },
   };
   vm.createContext(sandbox);
+  vm.runInContext(fs.readFileSync('js/scoring.js', 'utf8'), sandbox);
   vm.runInContext(fs.readFileSync('js/sync.js', 'utf8'), sandbox);
   return { Sync: sandbox.window.Sync, requests };
 }

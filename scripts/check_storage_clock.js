@@ -26,8 +26,8 @@ vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'js', 'storage.js'), 
 const Store = context.window.Store;
 const participant = { username: 'test-user-001', condition: 'att', sessionId: 'session-1' };
 let state = Store.init(participant, [1, 2, 3, 4, 5, 6], {
-  schemaVersion: 2,
-  experimentVersion: 'test-v2',
+  schemaVersion: 3,
+  experimentVersion: 'test-v3',
   puzzleDecisionTimeMs: 75000,
 });
 

@@ -11,3 +11,4 @@ __pycache__/
 # Editor
 .vscode/
 .idea/
+.playwright-cli/

@@ -37,16 +37,19 @@ class FakeSheet {
   constructor(rows, maxRows = 1000) {
     this.rows = rows.map(row => [...row]);
     this.maxRows = maxRows;
+    this.maxColumns = this.rows[0] ? this.rows[0].length : 1;
   }
 
   getLastRow() { return this.rows.length; }
   getLastColumn() { return this.rows[0] ? this.rows[0].length : 0; }
   getMaxRows() { return this.maxRows; }
-  getMaxColumns() { return this.getLastColumn(); }
+  getMaxColumns() { return this.maxColumns; }
   getRange(row, column, rowCount, columnCount) {
     return new FakeRange(this, row, column, rowCount, columnCount);
   }
   insertRowsAfter(_after, count) { this.maxRows += count; }
+  insertColumnsAfter(_after, count) { this.maxColumns += count; }
+  setFrozenRows() {}
 }
 
 class FakeSpreadsheet {
@@ -58,7 +61,7 @@ const source = fs.readFileSync('apps-script/Code.js', 'utf8');
 const sandbox = {};
 vm.createContext(sandbox);
 vm.runInContext(`${source}\nthis.TEST_API = {
-  appendUniqueRecords_, verifySessionCompleteness_
+  appendUniqueRecords_, verifySessionCompleteness_, extendDatasetSchema_, ensureDatasetSheet_
 };`, sandbox);
 
 function assert(condition, message) {
@@ -100,12 +103,12 @@ const version = 'test-version';
 const puzzleRows = [puzzleHeaders];
 const moveRows = [moveHeaders];
 for (let puzzleId = 1; puzzleId <= 6; puzzleId += 1) {
-  puzzleRows.push(['session-1', 'test-user', 'att', version, 2, puzzleId, 1]);
-  moveRows.push(['session-1', 'test-user', 'att', version, 2, puzzleId, `move-${puzzleId}`]);
+  puzzleRows.push(['session-1', 'test-user', 'att', version, 3, puzzleId, 1]);
+  moveRows.push(['session-1', 'test-user', 'att', version, 3, puzzleId, `move-${puzzleId}`]);
 }
 const sessionRecord = {
   experiment_version: version,
-  schema_version: 2,
+  schema_version: 3,
   puzzles_completed_before_timeout: 6,
   puzzles_timed_out_or_unstarted: 0,
 };
@@ -123,5 +126,18 @@ const incompleteSs = new FakeSpreadsheet({
 });
 const incomplete = sandbox.TEST_API.verifySessionCompleteness_(incompleteSs, identity, sessionRecord);
 assert(!incomplete.ok && incomplete.code === 'incomplete_session', 'missing moves must block completion');
+
+const legacyHeaders = ['id', 'value'];
+const migrationSheet = new FakeSheet([legacyHeaders, ['one', 1]]);
+const migrationSs = new FakeSpreadsheet({ migrated: migrationSheet });
+sandbox.TEST_API.extendDatasetSchema_(migrationSs, 'migrated', ['id', 'value', 'derived']);
+assert(migrationSheet.rows[0].join(',') === 'id,value,derived', 'migration must append headers');
+assert(migrationSheet.rows[1][0] === 'one' && migrationSheet.rows[1][1] === 1, 'migration must preserve rows');
+
+const automaticSheet = new FakeSheet([legacyHeaders, ['one', 1]]);
+const automaticSs = new FakeSpreadsheet({ automatic: automaticSheet });
+sandbox.TEST_API.ensureDatasetSheet_(automaticSs, 'automatic', ['id', 'value', 'derived']);
+assert(automaticSheet.rows[0].join(',') === 'id,value,derived', 'normal writes must safely auto-extend a prefix schema');
+assert(automaticSheet.rows[1][0] === 'one' && automaticSheet.rows[1][1] === 1, 'auto-extension must preserve rows');
 
 console.log('backend capacity and completion-receipt contract ok');

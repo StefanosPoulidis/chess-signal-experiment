@@ -1,22 +1,29 @@
 'use strict';
 
-// Stockfish wrapper. Fetches the asm.js build as a Blob so the Worker is
-// same-origin, then exposes async `analyze(fen)` returning eval (white's POV)
-// and best move (UCI).
-// Requires no dependencies.
+// Stockfish wrapper. The pinned, self-hosted WebAssembly build runs in a
+// same-origin Worker and returns evaluations from White's point of view.
 
 window.Engine = (() => {
-  const STOCKFISH_URL = 'https://cdn.jsdelivr.net/npm/stockfish.js@10.0.2/stockfish.js';
-  // A fixed node budget gives every participant the same engine effort even
-  // when their device runs Stockfish at a different speed.
-  const SEARCH_NODES = 250000;
-  const HARD_TIMEOUT_MS = 20000;
+  const STOCKFISH_SCRIPT = 'vendor/stockfish-18/stockfish-18-lite-single.js';
+  const STOCKFISH_WASM = 'stockfish-18-lite-single.wasm';
+  const SEARCH_DEPTH = 20;
+  const HARD_TIMEOUT_MS = 30000;
+  const PINNED_METADATA = {
+    name: 'Stockfish',
+    version: '18',
+    packageVersion: '18.0.8',
+    build: 'lite-single-wasm',
+    searchMode: 'depth',
+    searchValue: SEARCH_DEPTH,
+  };
 
   let worker = null;
   let listeners = [];
+  let reportedName = '';
 
   function onMessage(e) {
     const line = typeof e.data === 'string' ? e.data : '';
+    if (line.startsWith('id name ')) reportedName = line.slice('id name '.length).trim();
     listeners = listeners.filter(l => {
       const result = l.matcher(line);
       if (result !== false && result !== undefined) {
@@ -27,9 +34,15 @@ window.Engine = (() => {
     });
   }
 
+  function onError(error) {
+    const pending = listeners;
+    listeners = [];
+    pending.forEach(listener => listener.reject(error));
+  }
+
   function waitFor(matcher) {
-    return new Promise(resolve => {
-      listeners.push({ matcher, resolve });
+    return new Promise((resolve, reject) => {
+      listeners.push({ matcher, resolve, reject });
     });
   }
 
@@ -48,19 +61,20 @@ window.Engine = (() => {
 
   async function init() {
     if (worker) return;
-    const res = await withTimeout(fetch(STOCKFISH_URL), 15000, 'fetch stockfish');
-    if (!res.ok) throw new Error(`Stockfish fetch failed: ${res.status}`);
-    const blob = await res.blob();
-    const blobUrl = URL.createObjectURL(blob);
-    worker = new Worker(blobUrl);
+    const workerUrl = new URL(STOCKFISH_SCRIPT, window.location.href);
+    // The first hash item tells stockfish.js where its WASM lives. The
+    // `,worker` suffix is reserved for nested pthread workers and would make
+    // this single-threaded top-level Worker exit without initializing.
+    workerUrl.hash = STOCKFISH_WASM;
+    worker = new Worker(workerUrl.toString());
     worker.onmessage = onMessage;
+    worker.onerror = onError;
     send('uci');
     await withTimeout(
       waitFor(l => l.startsWith('uciok') ? true : false),
       10000, 'uciok'
     );
-    // No UCI_LimitStrength - run Stockfish at full strength. The fixed node
-    // budget below standardizes search effort across participant devices.
+    // No UCI_LimitStrength: use the pinned engine at the paper's depth 20.
     send('isready');
     await withTimeout(
       waitFor(l => l.startsWith('readyok') ? true : false),
@@ -81,7 +95,7 @@ window.Engine = (() => {
 
     const infoLines = [];
     let listenerRef;
-    const analysisPromise = new Promise(resolve => {
+    const analysisPromise = new Promise((resolve, reject) => {
       listenerRef = {
         matcher: (line) => {
           if (line.startsWith('info ') && /score (cp|mate) /.test(line)) {
@@ -91,9 +105,10 @@ window.Engine = (() => {
           return false;
         },
         resolve,
+        reject,
       };
       listeners.push(listenerRef);
-      send(`go nodes ${SEARCH_NODES}`);
+      send(`go depth ${SEARCH_DEPTH}`);
     });
 
     // Hard ceiling: stop a slow search and use the best move found so far.
@@ -140,5 +155,9 @@ window.Engine = (() => {
     return { cp, mate, bestMoveUci };
   }
 
-  return { init, analyze };
+  function metadata() {
+    return { ...PINNED_METADATA, reportedName: reportedName || 'Stockfish 18' };
+  }
+
+  return { init, analyze, metadata };
 })();

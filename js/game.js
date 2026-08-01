@@ -112,6 +112,10 @@ window.Game = (() => {
 
     setStatus('Loading engine...');
     await Engine.init();
+    session = Store.update(state => {
+      state.engineMetadata = Engine.metadata();
+      state.scoringMetadata = Scoring.metadata();
+    });
 
     if (session.activePuzzle && Store.remainingDecisionMs(session) <= 0) {
       await expirePuzzleTime();
