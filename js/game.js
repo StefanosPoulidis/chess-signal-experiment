@@ -101,6 +101,12 @@ window.Game = (() => {
       ? existing
       : Store.init(participant, puzzleOrder, config());
 
+    // On refresh, charge elapsed time only until the app restarts. Stockfish
+    // reinitialization remains outside the participant's decision budget.
+    if (canResume && session.activePuzzle && session.activeDecisionStartedAt !== null) {
+      session = Store.pauseDecisionTurn().state;
+    }
+
     if (session.surveySubmittedAt) {
       showFinished();
       return;
@@ -270,8 +276,11 @@ window.Game = (() => {
     acceptingInput = false;
     selectedSquare = null;
     els['next-button'].classList.add('hidden');
-    els['condition-badge'].textContent = session.participant.condition.toUpperCase();
-    els['condition-badge'].className = `badge ${session.participant.condition}`;
+    const conditionBadge = els['condition-badge'];
+    conditionBadge.textContent = session.participant.condition.toUpperCase();
+    conditionBadge.className = `badge ${session.participant.condition}`;
+    conditionBadge.classList.toggle('hidden', !config().localSmokeTest);
+    conditionBadge.setAttribute('aria-hidden', config().localSmokeTest ? 'false' : 'true');
     els['puzzle-indicator'].textContent = `Puzzle ${order} of ${session.puzzleOrder.length}`;
     Board.destroy();
     Board.create({

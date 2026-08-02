@@ -5,8 +5,7 @@
   <title>Chess Signal Experiment — Play</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="icon" href="data:,">
-  <link rel="stylesheet"
-        href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
+  <link rel="stylesheet" href="vendor/chessboardjs-1.0.0/chessboard.min.css">
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body class="experiment">
@@ -14,7 +13,7 @@
     <div id="experiment-ui">
       <header class="exp-header">
         <div id="puzzle-indicator" class="puzzle-indicator">Loading…</div>
-        <div id="condition-badge" class="badge"></div>
+        <div id="condition-badge" class="badge hidden" aria-hidden="true"></div>
       </header>
       <div class="move-meta">
         <span id="move-counter" class="move-counter"></span>
@@ -23,7 +22,7 @@
       <div id="banner" class="signal-banner hidden" aria-live="polite"></div>
 
       <div class="board-wrapper">
-        <div id="chess-board" style="width: 600px;"></div>
+        <div id="chess-board"></div>
       </div>
 
       <footer class="exp-footer">
@@ -69,9 +68,9 @@
   </main>
 
   <!-- Third-party -->
-  <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chess.js@0.10.3/chess.min.js"></script>
-  <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
+  <script src="vendor/jquery-3.7.1/jquery.min.js"></script>
+  <script src="vendor/chess.js-0.10.3/chess.js"></script>
+  <script src="vendor/chessboardjs-1.0.0/chessboard.min.js"></script>
 
   <!-- App -->
   <script src="js/config.js"></script>

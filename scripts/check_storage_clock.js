@@ -62,4 +62,11 @@ if (timing.elapsedMs !== 1000 || timing.remainingMs !== 74000) throw new Error('
 if (timing.cumulativeDecisionTimeMs !== 76000) throw new Error('session cumulative decision time is incorrect');
 if (timing.state.decisionTimeUsedMs !== 76000) throw new Error('session aggregate decision time is incorrect');
 
+const gameSource = fs.readFileSync(path.join(__dirname, '..', 'js', 'game.js'), 'utf8');
+const resumePause = gameSource.indexOf('session = Store.pauseDecisionTurn().state;');
+const engineInit = gameSource.indexOf('await Engine.init();');
+if (resumePause < 0 || engineInit < 0 || resumePause > engineInit) {
+  throw new Error('a refreshed active decision must pause before engine initialization');
+}
+
 console.log('independent persistent puzzle-clock contract ok');

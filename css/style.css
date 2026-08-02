@@ -40,6 +40,7 @@ form {
 
 input[type="text"] {
   flex: 1;
+  min-width: 0;
   padding: 0.7rem 0.9rem;
   border: 1px solid #cfcfd3;
   border-radius: 6px;
@@ -208,6 +209,8 @@ body.experiment {
 }
 
 #chess-board {
+  width: 100%;
+  max-width: 600px;
   margin: 0 auto;
 }
 
@@ -417,4 +420,42 @@ fieldset.survey-field {
   margin-top: 0.9rem;
   font-size: 0.78rem;
   color: #888;
+}
+
+@media (max-width: 520px) {
+  body.experiment {
+    padding: 0.5rem;
+  }
+
+  .experiment-wrapper {
+    padding: 1rem 0.75rem 1.25rem;
+  }
+
+  .promotion-chooser {
+    width: calc(100% - 2rem);
+    min-width: 0;
+    padding: 1.25rem 1rem 1rem;
+  }
+
+  .promo-buttons {
+    gap: 0.4rem;
+  }
+
+  .promo-btn {
+    padding-inline: 0.2rem;
+  }
+}
+
+@media (max-width: 360px) {
+  main.login {
+    padding: 1.75rem 1.25rem;
+  }
+
+  #login-form {
+    flex-direction: column;
+  }
+
+  #login-form button {
+    width: 100%;
+  }
 }

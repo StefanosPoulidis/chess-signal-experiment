@@ -24,10 +24,12 @@ assert(sync.includes('claimUsername'), 'Sync return object must expose claimUser
 assert(app.includes('Sync.claimUsername'), 'login must claim the username before redirect');
 assert(app.includes('already been used'), 'login must show a clear already-used message');
 assert(app.includes('function recoverLocalSession'), 'login must recover an unfinished local session');
-assert(app.includes("localStorage.getItem('chess-signal-session')"), 'resume must use the persisted experiment session');
+assert(app.includes("const SESSION_KEY = 'chess-signal-session'"), 'resume must use the persisted experiment session');
 assert(app.includes('resumableParticipant.sessionId'), 'resume must reclaim the original server session id');
 assert(app.includes('!saved.surveySubmittedAt'), 'an unsubmitted post-study survey must remain resumable');
 assert(!app.includes("saved.taskStatus !== 'completed'"), 'finishing the chess task must not block survey recovery');
+assert(app.includes('function storagePreflight'), 'login must verify browser storage before claiming a username');
+assert(app.indexOf('if (!storagePreflight())') < app.indexOf('Sync.claimUsername'), 'storage validation must run before the remote username claim');
 
 assert(appsScript.includes("USED_USERNAMES_TAB = 'used_usernames'"), 'Apps Script must define a used_usernames tab');
 assert(appsScript.includes('LockService.getScriptLock'), 'username claim and data append must use a script lock');

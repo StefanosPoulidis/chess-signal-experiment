@@ -12,6 +12,33 @@ const form = document.getElementById('login-form');
 const input = document.getElementById('username');
 const status = document.getElementById('status');
 const submitButton = form.querySelector('button[type="submit"]');
+const SESSION_KEY = 'chess-signal-session';
+
+function storagePreflight() {
+  const probeKey = 'chess-signal-storage-probe';
+  try {
+    localStorage.setItem(probeKey, 'ok');
+    sessionStorage.setItem(probeKey, 'ok');
+    if (localStorage.getItem(probeKey) !== 'ok' || sessionStorage.getItem(probeKey) !== 'ok') {
+      throw new Error('browser storage verification failed');
+    }
+    localStorage.removeItem(probeKey);
+    sessionStorage.removeItem(probeKey);
+
+    const saved = localStorage.getItem(SESSION_KEY);
+    if (saved) JSON.parse(saved);
+    const participant = sessionStorage.getItem('participant');
+    if (participant) JSON.parse(participant);
+    return true;
+  } catch (error) {
+    console.error('[Login] browser storage is unavailable or unreadable', error);
+    try {
+      localStorage.removeItem(probeKey);
+      sessionStorage.removeItem(probeKey);
+    } catch { /* storage is unavailable */ }
+    return false;
+  }
+}
 
 function makeSessionId() {
   if (crypto.randomUUID) return crypto.randomUUID();
@@ -20,7 +47,7 @@ function makeSessionId() {
 
 function recoverLocalSession(username) {
   try {
-    const saved = JSON.parse(localStorage.getItem('chess-signal-session'));
+    const saved = JSON.parse(localStorage.getItem(SESSION_KEY));
     if (
       saved &&
       saved.participant &&
@@ -52,6 +79,13 @@ form.addEventListener('submit', async (e) => {
   if (!condition) {
     status.className = 'status error';
     status.textContent = 'Username not recognized. Check spelling and try again.';
+    if (submitButton) submitButton.disabled = false;
+    return;
+  }
+
+  if (!storagePreflight()) {
+    status.className = 'status error';
+    status.textContent = 'This browser cannot safely save the experiment. Please contact the experimenter before continuing.';
     if (submitButton) submitButton.disabled = false;
     return;
   }

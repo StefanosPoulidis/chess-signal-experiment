@@ -21,8 +21,11 @@ Interactive web platform for a between-participants experiment testing
 ## Architecture
 
 - Static site, hosted on GitHub Pages.
-- [`chess.js`](https://github.com/jhlywa/chess.js) for move validation.
-- [`chessboard2`](https://github.com/oakmac/chessboard2) for the UI.
+- [`chess.js`](https://github.com/jhlywa/chess.js) 0.10.3 for move validation.
+- [`chessboard.js`](https://github.com/oakmac/chessboardjs) 1.0.0 and jQuery
+  3.7.1 for the board UI. Their runtime assets and the v1.0.0 Wikipedia piece
+  set are pinned and self-hosted under `vendor/`; the piece set is taken from
+  chessboard.js commit `bfa31a05da24e6c3877f7acfa12dfa77ad7638bf`.
 - Stockfish 18 via [`stockfish.js`](https://github.com/nmrugg/stockfish.js),
   pinned at npm package `18.0.8` and self-hosted as the lite single-threaded
   WebAssembly build. Live analyses use depth 20.
@@ -50,7 +53,7 @@ Interactive web platform for a between-participants experiment testing
   position reached before timeout still receives descriptive position metrics.
 - `Yes` to the direct outside-help question sets `data_quality_exclude=true` and `data_quality_reason=reported_outside_help`.
 - The current protocol/data version is
-  `2026-08-01-stockfish18-paper-scoring-v1` with schema version `3`.
+  `2026-08-01-stockfish18-paper-scoring-v2` with schema version `3`.
 
 ## Local development
 
