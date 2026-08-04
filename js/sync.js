@@ -62,6 +62,23 @@ window.Sync = (() => {
     return value ? new Date(value).toISOString() : '';
   }
 
+  function finalPuzzleMetrics(puzzle) {
+    const metrics = Scoring.positionMetrics(
+      puzzle.finalEvalCp,
+      puzzle.playerColor,
+      puzzle.terminalOutcome || ''
+    );
+    if (puzzle.status !== 'timed_out') return metrics;
+
+    const whiteWinPercentage = puzzle.playerColor === 'white' ? 0 : 100;
+    return {
+      whiteWinPercentage,
+      participantWinPercentage: 0,
+      whiteWinProbability: whiteWinPercentage / 100,
+      participantWinProbability: 0,
+    };
+  }
+
   function moveRecords(state, puzzle) {
     const engine = engineMetadata(state);
     const scoring = scoringMetadata(state);
@@ -166,11 +183,7 @@ window.Sync = (() => {
   function puzzleRecord(state, puzzle) {
     const firstMove = puzzle.moves && puzzle.moves[0];
     const start = Scoring.positionMetrics(puzzle.startEvalCp, puzzle.playerColor, '');
-    const final = Scoring.positionMetrics(
-      puzzle.finalEvalCp,
-      puzzle.playerColor,
-      puzzle.terminalOutcome || ''
-    );
+    const final = finalPuzzleMetrics(puzzle);
     const engine = engineMetadata(state);
     const scoring = scoringMetadata(state);
     return {

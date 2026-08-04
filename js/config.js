@@ -12,7 +12,7 @@ const LOCAL_SMOKE_TEST = Boolean(
 
 window.CONFIG = {
   // Version every substantive protocol or data-schema change.
-  experimentVersion: '2026-08-01-stockfish18-paper-scoring-v2',
+  experimentVersion: '2026-08-03-timeout-loss-scoring-v3',
   schemaVersion: 3,
 
   // Each puzzle has an independent active decision-time budget. Engine

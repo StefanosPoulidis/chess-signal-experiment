@@ -92,6 +92,46 @@ if (!move.move_accuracy_valid || move.move_accuracy === '') {
 if (move.evaluation_engine_version !== '18' || move.evaluation_search_depth !== 20) {
   throw new Error('evaluation engine metadata must accompany move measurements');
 }
+if (puzzleRow.final_win_probability_participant !== 0 ||
+    puzzleRow.final_win_percentage_participant !== 0) {
+  throw new Error('a timeout must be scored as a participant loss');
+}
+if (puzzleRow.final_win_probability_white !== 1 || puzzleRow.final_win_percentage_white !== 100) {
+  throw new Error('white-perspective timeout scoring must invert for a Black participant');
+}
+if (puzzleRow.final_eval_cp_white !== 350 || puzzleRow.final_eval_cp_participant !== -350) {
+  throw new Error('timeout scoring must preserve the raw final CP evaluation');
+}
+if (puzzleRow.win_probability_change_start_to_final_participant !== -0.323788) {
+  throw new Error('timeout outcome change must use participant win probability zero');
+}
+const whiteTimeout = records.puzzleRecord(state, {
+  ...puzzle,
+  playerColor: 'white',
+});
+if (whiteTimeout.final_win_probability_participant !== 0 ||
+    whiteTimeout.final_win_probability_white !== 0) {
+  throw new Error('white-participant timeout scoring must remain a participant loss');
+}
+
+const terminalDraw = records.puzzleRecord(state, {
+  ...puzzle,
+  status: 'completed_terminal',
+  completedBeforeTimeout: true,
+  terminalOutcome: 'draw_stalemate',
+});
+if (terminalDraw.final_win_probability_participant !== 0.5) {
+  throw new Error('a terminal draw must be scored as participant win probability 0.5');
+}
+const terminalParticipantWin = records.puzzleRecord(state, {
+  ...puzzle,
+  status: 'completed_terminal',
+  completedBeforeTimeout: true,
+  terminalOutcome: 'white_checkmated',
+});
+if (terminalParticipantWin.final_win_probability_participant !== 1) {
+  throw new Error('a terminal participant win must be scored as win probability 1');
+}
 
 const scoring = context.window.Scoring;
 if (scoring.winPercentageFromCp(0) !== 50) throw new Error('CP zero must map to 50 percent');

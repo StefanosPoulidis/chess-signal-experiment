@@ -49,11 +49,13 @@ Interactive web platform for a between-participants experiment testing
   `W_after` is measured immediately after the participant's move and before
   the opponent reply. Raw values are retained; values outside 0-100 are marked
   invalid and left blank in the analysis-ready accuracy field, as in the paper.
-- Timeout remains a separate outcome and is never recoded as a loss. The final
-  position reached before timeout still receives descriptive position metrics.
+- Timeout remains explicitly recorded in the puzzle status and is scored as a
+  participant loss for the primary final outcome (win probability 0). The last
+  position reached before timeout retains its raw FEN and CP evaluation for
+  descriptive analyses.
 - `Yes` to the direct outside-help question sets `data_quality_exclude=true` and `data_quality_reason=reported_outside_help`.
 - The current protocol/data version is
-  `2026-08-01-stockfish18-paper-scoring-v2` with schema version `3`.
+  `2026-08-03-timeout-loss-scoring-v3` with schema version `3`.
 
 ## Local development
 
